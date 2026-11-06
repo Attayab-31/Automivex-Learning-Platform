@@ -25,6 +25,40 @@ async function api(path, options={}) {
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
+function beginButtonLoading(button, label="Loading…") {
+  if (!(button instanceof HTMLButtonElement) || button.disabled) return null;
+  const original = {
+    content: button.innerHTML,
+    width: button.style.width,
+    ariaLabel: button.getAttribute("aria-label"),
+    ariaBusy: button.getAttribute("aria-busy")
+  };
+  button.style.width = `${button.getBoundingClientRect().width}px`;
+  button.disabled = true;
+  button.classList.add("is-loading");
+  button.setAttribute("aria-busy", "true");
+  button.setAttribute("aria-label", label);
+  button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span>${esc(label)}</span>`;
+  return () => {
+    if (!button.isConnected) return;
+    button.innerHTML = original.content;
+    button.style.width = original.width;
+    button.disabled = false;
+    button.classList.remove("is-loading");
+    if (original.ariaLabel === null) button.removeAttribute("aria-label");
+    else button.setAttribute("aria-label", original.ariaLabel);
+    if (original.ariaBusy === null) button.removeAttribute("aria-busy");
+    else button.setAttribute("aria-busy", original.ariaBusy);
+  };
+}
+function buttonLoadingLabel(action) {
+  return ({
+    enroll: "Enrolling…",
+    quiz: "Loading assessment…",
+    "issue-certificate": "Issuing certificate…",
+    logout: "Signing out…"
+  })[action] || "Loading…";
+}
 function btn(label, action, cls="btn primary", extra="") { return `<button class="${cls}" data-action="${action}" ${extra}>${label}</button>`; }
 function brand() { return `<a class="brand" href="#home" data-action="home"><img class="brand-logo brand-logo-light" src="/logo.svg" width="2244" height="498" alt="Automivex"><img class="brand-logo brand-logo-dark" src="/logo-dark.svg" width="2244" height="498" alt="Automivex"></a>`; }
 function themeToggle() {
@@ -482,16 +516,10 @@ async function submitLessonCheck(form, id) {
   const data = new FormData(form);
   const choice = Number(data.get("choice"));
   const reflection = String(data.get("reflection") || "").trim();
-  const button = form.querySelector("button[type=submit]");
-  button.disabled = true;
-  try {
-    const d = await api(`/api/lessons/${id}/complete`, { method:"POST", body: JSON.stringify({ choice, reflection }) });
-    state.progress = d.progress;
-    render();
-    toast("Learning check passed. Milestone complete.","success");
-  } finally {
-    if (button.isConnected) button.disabled = false;
-  }
+  const d = await api(`/api/lessons/${id}/complete`, { method:"POST", body: JSON.stringify({ choice, reflection }) });
+  state.progress = d.progress;
+  render();
+  toast("Learning check passed. Milestone complete.","success");
 }
 async function loadQuiz() {
   const fullscreenRequest = document.documentElement.requestFullscreen
@@ -553,23 +581,28 @@ async function exitAssessmentFullscreen() {
   try { await document.exitFullscreen(); } catch {}
 }
 async function submitProject(form) {
-  const f=new FormData(form); const button=form.querySelector("button[type=submit]"); button.disabled=true; button.textContent="Checking repository…";
-  try {
-    const socialAttestations=Object.fromEntries(SOCIAL_REQUIREMENTS.map(({key})=>[key,f.getAll("socialAttestations").includes(key)]));
-    const d=await api("/api/project/submit",{method:"POST",body:JSON.stringify({githubUrl:f.get("githubUrl"),demoUrl:f.get("demoUrl"),declaration:f.get("declaration")==="on",socialAttestations})});
-    await refresh(); state.view="dashboard"; render(); toast(d.result.message,d.result.passed?"success":"error");
-  } finally { if (button.isConnected) { button.disabled=false; button.textContent="Check repository and submit"; } }
+  const f=new FormData(form);
+  const socialAttestations=Object.fromEntries(SOCIAL_REQUIREMENTS.map(({key})=>[key,f.getAll("socialAttestations").includes(key)]));
+  const d=await api("/api/project/submit",{method:"POST",body:JSON.stringify({githubUrl:f.get("githubUrl"),demoUrl:f.get("demoUrl"),declaration:f.get("declaration")==="on",socialAttestations})});
+  await refresh(); state.view="dashboard"; render(); toast(d.result.message,d.result.passed?"success":"error");
 }
 async function reviewProject(submissionId, status) {
   const note = window.prompt(status === "approved" ? "Optional review note for this approval:" : "Optional feedback for the learner:", "");
   if (note === null) return;
-  await api("/api/admin/projects/review", {
-    method:"POST",
-    body:JSON.stringify({ submissionId, status, notes:note })
-  });
-  state.admin = await api("/api/admin/overview");
-  render();
-  toast(status === "approved" ? "Capstone approved. Certificate eligibility is now unlocked." : "Capstone rejected. Your feedback was saved.", "success");
+  const button = [...document.querySelectorAll('[data-action="review-project"]')]
+    .find(item => item.dataset.submissionId === submissionId && item.dataset.reviewStatus === status);
+  const stopLoading = beginButtonLoading(button, status === "approved" ? "Approving…" : "Saving feedback…");
+  try {
+    await api("/api/admin/projects/review", {
+      method:"POST",
+      body:JSON.stringify({ submissionId, status, notes:note })
+    });
+    state.admin = await api("/api/admin/overview");
+    render();
+    toast(status === "approved" ? "Capstone approved. Certificate eligibility is now unlocked." : "Capstone rejected. Your feedback was saved.", "success");
+  } finally {
+    stopLoading?.();
+  }
 }
 async function issueCertificate() {
   const d=await api("/api/certificate/issue",{method:"POST",body:"{}"});
@@ -579,6 +612,9 @@ async function issueCertificate() {
 app.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action]"); if(!el) return;
   const action=el.dataset.action;
+  if (el instanceof HTMLButtonElement && el.disabled) return;
+  const usesLoading = !["menu","account","delete-account","review-project","open-module","video-segment"].includes(action) && !action.startsWith("lesson:");
+  const stopLoading = usesLoading ? beginButtonLoading(el, buttonLoadingLabel(action)) : null;
   try {
     if(action !== "menu") {
       $("#mobile-links")?.classList.remove("open");
@@ -609,7 +645,7 @@ app.addEventListener("click", async e=>{
     }
     else if(action==="change-email") {state.authEmail="";state.debugCode=null;await go("auth");}
     else if(action==="logout") {await api("/api/auth/logout",{method:"POST",body:"{}"});state.user=null;state.progress=null;state.view="home";history.replaceState(null,"",location.pathname);render();toast("You have signed out.");}
-    else if(action==="delete-account") { if(confirm("Permanently delete your Automivex learning account, progress, submissions and certificate records? This cannot be undone.")){await api("/api/account",{method:"DELETE"});state.user=null;state.progress=null;state.view="home";render();toast("Your learning account and associated records were deleted.","success");} }
+    else if(action==="delete-account") { if(confirm("Permanently delete your Automivex learning account, progress, submissions and certificate records? This cannot be undone.")){const stopDeleteLoading=beginButtonLoading(el,"Deleting account…");try{await api("/api/account",{method:"DELETE"});state.user=null;state.progress=null;state.view="home";render();toast("Your learning account and associated records were deleted.","success");}finally{stopDeleteLoading?.();}} }
     else if(action.startsWith("lesson:")) {
       const lessonId = action.split(":")[1];
       const details = document.querySelector(`[data-lesson-details="${lessonId}"]`);
@@ -629,16 +665,32 @@ app.addEventListener("click", async e=>{
       body?.setAttribute("aria-hidden",String(!isOpen));
     }
   } catch(err) { toast(err.message,"error"); }
+  finally { stopLoading?.(); }
 });
 app.addEventListener("submit", async e=>{
   e.preventDefault();
+  const form=e.target;
+  if (!(form instanceof HTMLFormElement) || form.dataset.submitting === "true") return;
+  form.dataset.submitting = "true";
+  const submitButton = form.querySelector('button[type="submit"]');
+  const loadingLabel = ({
+    "start-form": "Sending code…",
+    "verify-form": "Verifying code…",
+    "quiz-form": "Submitting assessment…",
+    "project-form": "Checking repository…"
+  })[form.id] || "Saving progress…";
+  const stopLoading = beginButtonLoading(submitButton, loadingLabel);
   try {
-    if(e.target.matches("[data-lesson-check]")) await submitLessonCheck(e.target, e.target.dataset.lessonCheck);
-    else if(e.target.id==="start-form") await startAuth(e.target);
-    else if(e.target.id==="verify-form") await verifyAuth(e.target);
-    else if(e.target.id==="quiz-form") await submitQuiz(e.target);
-    else if(e.target.id==="project-form") await submitProject(e.target);
+    if(form.matches("[data-lesson-check]")) await submitLessonCheck(form, form.dataset.lessonCheck);
+    else if(form.id==="start-form") await startAuth(form);
+    else if(form.id==="verify-form") await verifyAuth(form);
+    else if(form.id==="quiz-form") await submitQuiz(form);
+    else if(form.id==="project-form") await submitProject(form);
   } catch(err) { toast(err.message,"error"); }
+  finally {
+    delete form.dataset.submitting;
+    stopLoading?.();
+  }
 });
 (async function init(){
   try { const cfg=await api("/api/config"); state.config=cfg; const c=await api("/api/course"); state.course=c.course; const me=await api("/api/me"); state.user=me.user;state.progress=me.progress; }

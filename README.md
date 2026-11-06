@@ -59,7 +59,7 @@ The site and API are implemented as a Cloudflare Worker with static assets and a
 | Service | Used for | Important boundary |
 |---|---|---|
 | Cloudflare Workers and D1 | Hosting, API, and persistent application data | Usage limits and prices depend on Cloudflare’s current plans. |
-| Hostinger Business Email | Sending sign-in codes through authenticated SMTP over TLS | Requires an active mailbox and its SMTP credentials; trial and renewal terms are account-specific. |
+| Resend | Sending sign-in codes through its HTTPS email API | Requires a verified sending domain and API key; plan limits apply. Replies to `support@automivex.com` are received by the existing Hostinger mailbox. |
 | GitHub REST API | Inspecting public capstone repository metadata and tree contents | The checker does not run submitted code or perform a code review. |
 | YouTube | External freeCodeCamp learning video | The video is third-party content and is not hosted by this project. |
 | LinkedIn, YouTube, TikTok | Learner links and capstone attestations | Follow/subscription confirmations are self-reported, not verified by those platforms. |
@@ -86,12 +86,13 @@ No public demo deployment has been verified. Run the app locally using the [quic
 flowchart LR
     Browser["Learner browser<br/>Static app and video embed"] -->|"HTTPS, JSON, session cookie"| Worker["Cloudflare Worker<br/>API and static assets"]
     Worker -->|"SQL queries"| D1[("Cloudflare D1")]
-    Worker -->|"TLS SMTP :465"| Mail["Hostinger Business Email"]
+    Worker -->|"HTTPS email API"| Mail["Resend"]
+    Mail -.->|"Replies to support@automivex.com"| Hostinger["Hostinger mailbox"]
     Worker -->|"HTTPS public API"| GitHub["GitHub REST API"]
     Browser -->|"Embedded course video"| YouTube["YouTube / freeCodeCamp"]
 ```
 
-The browser sends same-origin API requests to the Worker. The Worker serves the static application, enforces route access, and reads or writes learner state in D1. OTP delivery uses Hostinger SMTP; capstone checks call GitHub’s public API. The embedded course video is served by YouTube.
+The browser sends same-origin API requests to the Worker. The Worker serves the static application, enforces route access, and reads or writes learner state in D1. OTP delivery uses Resend’s HTTPS API with the verified `automivex.com` sender; replies continue to the Hostinger mailbox. Capstone checks call GitHub’s public API. The embedded course video is served by YouTube.
 
 ## Technology stack
 
@@ -100,7 +101,7 @@ The browser sends same-origin API requests to the Worker. The Worker serves the 
 | Front end | HTML, CSS, vanilla JavaScript |
 | Application/API | Cloudflare Workers (JavaScript modules) |
 | Database | Cloudflare D1 (SQLite-compatible) |
-| Email | Hostinger SMTP, TLS on port 465 |
+| Email | Resend HTTPS email API |
 | Local development and deployment | Node.js, npm, Wrangler |
 | Automated checks | JavaScript syntax checks and HTTP production-smoke tests |
 
@@ -125,7 +126,7 @@ The browser sends same-origin API requests to the Worker. The Worker serves the 
 
 - Node.js 20 or newer and npm.
 - Cloudflare account for local Wrangler development; production deployment also requires a D1 database.
-- An active Hostinger Business Email mailbox if you want to test real OTP email delivery.
+- A verified Resend sending domain and API key if you want to test real OTP email delivery.
 
 ### Install and configure
 
@@ -148,11 +149,8 @@ Edit `.dev.vars` locally. Never commit it:
 | `ENVIRONMENT` | `development` | Enables the development-only debug OTP fallback. Never use in production. |
 | `APP_URL` | `http://localhost:8787` | Local application URL. |
 | `SESSION_SECRET` | Generate a random secret of at least 32 characters | Protects verification-code hashes and signs certificate evidence. |
-| `SMTP_HOST` | `smtp.hostinger.com` | Hostinger SMTP endpoint. |
-| `SMTP_PORT` | `465` | Implicit TLS SMTP port used by the Worker. |
-| `SMTP_USER` | `support@automivex.com` | Full mailbox address; keep private. |
-| `SMTP_PASSWORD` | Set your mailbox password locally | Secret; never commit or paste into README/configuration. |
-| `EMAIL_FROM` | `Automivex <support@automivex.com>` | Sender address matching the mailbox. |
+| `RESEND_API_KEY` | Set a Resend API key in `.dev.vars` | Secret; never commit or paste into README/configuration. |
+| `EMAIL_FROM` | `Automivex <support@automivex.com>` | Sender address at the verified `automivex.com` domain. |
 | `ADMIN_EMAILS` | `you@your-domain.example` | Comma-separated addresses granted administrator role after email verification. |
 | `LINKEDIN_URL` | Official profile URL | Public programme link. |
 | `YOUTUBE_URL` | Official channel URL | Public programme link; needed for capstone submission. |
@@ -167,7 +165,7 @@ npm run db:local
 npm run dev
 ```
 
-Open <http://localhost:8787>. Without SMTP credentials, development mode can return a debug OTP for local sign-in. Configure SMTP to test actual email delivery. Do not deploy development-mode behavior.
+Open <http://localhost:8787>. Without a Resend API key, development mode can return a debug OTP for local sign-in. Configure `RESEND_API_KEY` to test actual email delivery. Do not deploy development-mode behavior.
 
 ## API
 
@@ -226,7 +224,7 @@ Read the signed-in learner state:
 curl -b cookies.txt http://localhost:8787/api/me
 ```
 
-The example code is illustrative; a valid six-digit code must be received from the configured SMTP mailbox or local development response.
+The example code is illustrative; a valid six-digit code must be received using the configured Resend domain or local development response.
 </details>
 
 ## Tests and checks
@@ -247,7 +245,7 @@ The suite checks the health and course endpoints, unauthenticated access control
 
 ## Deployment
 
-Production deployment targets Cloudflare Workers, not static-only hosting. The repository currently needs production configuration before deployment; `npm run deploy` automatically runs the `predeploy` script and rejects unresolved placeholders.
+Production deployment targets Cloudflare Workers, not static-only hosting. `npm run deploy` automatically runs the `predeploy` script and rejects unresolved configuration placeholders.
 
 1. Authenticate with Cloudflare: `npx wrangler login`.
 2. Create the production D1 database: `npm run db:create`; copy the returned UUID into `wrangler.jsonc`.
@@ -257,23 +255,22 @@ Production deployment targets Cloudflare Workers, not static-only hosting. The r
 
    ```bash
    npx wrangler secret put SESSION_SECRET
-   npx wrangler secret put SMTP_USER
-   npx wrangler secret put SMTP_PASSWORD
+   npx wrangler secret put RESEND_API_KEY
    ```
 
-6. Confirm `SMTP_HOST=smtp.hostinger.com`, `SMTP_PORT=465`, `EMAIL_FROM` matches the mailbox, `ENVIRONMENT=production`, and `APP_URL` is the intended public URL.
+6. Confirm `EMAIL_FROM` uses the verified Resend domain, `ENVIRONMENT=production`, and `APP_URL` is the intended public URL.
 7. Run `npm run predeploy`, then deploy with `npm run deploy`.
 8. Test registration, external OTP delivery, learner flow, admin review, and certificate verification before announcing the site.
 
 For a first preview, use the generated `workers.dev` address. To use `learn.automivex.com`, configure the Worker custom domain in Cloudflare. Preserve existing apex, `www`, MX, SPF, DKIM, and DMARC records; do not replace the DNS zone or change nameservers without first inventorying and preserving the existing records. See [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md).
 
-> The current local production configuration still contains a placeholder D1 ID and admin email, and blank YouTube/TikTok URLs. `npm run predeploy` will fail until these values and the required Worker secrets are configured.
+> When deploying your own copy, replace account-specific configuration and add the required Worker secrets before deployment.
 
 ## Security and limitations
 
 - Never commit `.dev.vars`, `.env` files, mailbox passwords, session secrets, or API credentials. `.gitignore` excludes local secret files; `.dev.vars.example` contains placeholders only.
 - If a credential was ever committed or shared, rotate it. Removing it from the current files does not remove it from Git history.
-- OTP delivery depends on the active Hostinger email plan and its sending limits/renewal terms.
+- OTP delivery depends on Resend domain verification, API availability, and the active plan's sending limits.
 - Cloudflare Workers/D1 usage limits and pricing can change. Review the current [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) and [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/).
 - The GitHub checker inspects public repository metadata and file-tree structure only. It does not execute source code or constitute a security review.
 - Social follow/subscription actions are learner attestations, not verified integrations.
@@ -284,7 +281,7 @@ For a first preview, use the generated `workers.dev` address. To use `learn.auto
 ### Before public launch
 
 - Complete D1, administrator, and public social-link configuration.
-- Add the Cloudflare secrets and verify Hostinger SMTP delivery from the deployed Worker.
+- Add the Cloudflare secrets and verify Resend email delivery from the deployed Worker.
 - Run the end-to-end learner, administrator review, account deletion, and certificate verification flows against production D1.
 - Configure and verify the custom domain without disrupting existing website or mail DNS.
 

@@ -29,11 +29,10 @@ Do not commit `.dev.vars`, `.env` or API keys.
 
 ```bash
 npx wrangler secret put SESSION_SECRET
-npx wrangler secret put SMTP_USER
-npx wrangler secret put SMTP_PASSWORD
+npx wrangler secret put RESEND_API_KEY
 ```
 
-Create a long random session secret (at least 32 characters). Enter `support@automivex.com` for `SMTP_USER` and its mailbox password for `SMTP_PASSWORD`. In `wrangler.jsonc`, configure `SMTP_HOST` as `smtp.hostinger.com`, `SMTP_PORT` as `465`, and `EMAIL_FROM` as `Automivex <support@automivex.com>`. Also set the app URL, production environment, admin email, LinkedIn, YouTube and TikTok profile URLs, and optional WhatsApp invite URL. All three social profile URLs must be configured for capstone submission.
+Create a long random session secret (at least 32 characters). Create a Resend API key with sending access and store it as the `RESEND_API_KEY` Worker secret. Keep the key private. The verified `automivex.com` domain allows the app to send as `Automivex <support@automivex.com>`; replies continue to the Hostinger mailbox. Also set the app URL, production environment, admin email, LinkedIn, YouTube and TikTok profile URLs, and optional WhatsApp invite URL. All three social profile URLs must be configured for capstone submission.
 
 ## Stage 4 — Deploy preview
 
@@ -49,7 +48,7 @@ In the Worker settings, add `learn.automivex.com` as a Custom Domain. If Cloudfl
 
 ## Stage 6 — Email
 
-In Hostinger hPanel, open **Emails → automivex.com → Mailboxes**, then the settings or app/device configuration for `support@automivex.com`. Confirm SMTP host `smtp.hostinger.com`, port `465`, SSL/TLS, and that SMTP authentication is enabled. No VPS is required. Do not change existing DNS or mail records to use this mailbox. After deployment, test OTP delivery to external mailboxes. Confirm the mailbox plan's sending limits and renewal terms with Hostinger.
+OTP messages are sent through Resend's HTTPS API, not Hostinger SMTP. Keep Hostinger's existing MX records so `support@automivex.com` can continue receiving email. The verified Resend domain authorizes sending with this address. After deployment, test OTP delivery to an external mailbox and confirm replies reach the Hostinger inbox.
 
 ## Stage 7 — Production readiness
 

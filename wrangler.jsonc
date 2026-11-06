@@ -14,7 +14,7 @@
     {
       "binding": "DB",
       "database_name": "automivex-learning",
-      "database_id": "REPLACE_WITH_DATABASE_ID",
+      "database_id": "c30c7373-a180-401f-97ca-1ccd61b4b975",
       "migrations_dir": "migrations"
     }
   ],
@@ -22,12 +22,10 @@
     "ENVIRONMENT": "production",
     "APP_URL": "https://learn.automivex.com",
     "EMAIL_FROM": "Automivex <support@automivex.com>",
-    "SMTP_HOST": "smtp.hostinger.com",
-    "SMTP_PORT": "465",
-    "ADMIN_EMAILS": "REPLACE_WITH_YOUR_ADMIN_EMAIL",
+    "ADMIN_EMAILS": "attayabpc2@gmail.com",
     "LINKEDIN_URL": "https://www.linkedin.com/company/automivex/",
-    "YOUTUBE_URL": "",
-    "TIKTOK_URL": "",
+    "YOUTUBE_URL": "https://youtube.com/@automivex?si=JYQes4xodd3ifco9",
+    "TIKTOK_URL": "https://www.tiktok.com/@automivex",
     "GITHUB_ORG_URL": "https://github.com/Attayab-31",
     "WHATSAPP_COMMUNITY_URL": ""
   },

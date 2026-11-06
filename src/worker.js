@@ -1,5 +1,3 @@
-import { connect } from "cloudflare:sockets";
-
 const COURSE_ID = "python-api-2026";
 const COURSE = {
   id: COURSE_ID,
@@ -348,9 +346,9 @@ async function rateLimit(env, key, limit, windowSeconds) {
   return true;
 }
 async function sendEmail(env, to, subject, textBody, htmlBody) {
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASSWORD || !env.EMAIL_FROM) {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) {
     if (env.ENVIRONMENT === "development") return { delivered: false, development: true };
-    throw new Error("Email delivery is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_FROM.");
+    throw new Error("Email delivery is not configured. Set RESEND_API_KEY and EMAIL_FROM.");
   }
 
   const sender = env.EMAIL_FROM.match(/<([^<>\s]+)>/)?.[1] || env.EMAIL_FROM;
@@ -360,113 +358,34 @@ async function sendEmail(env, to, subject, textBody, htmlBody) {
       /[\r\n]/.test(env.EMAIL_FROM + subject + cleanRecipient)) {
     throw new Error("Email sender, recipient, or subject is invalid.");
   }
-  if (Number(env.SMTP_PORT || 465) !== 465) {
-    throw new Error("Hostinger SMTP must use implicit TLS on port 465.");
-  }
-
-  const socket = connect(
-    { hostname: env.SMTP_HOST, port: 465 },
-    { secureTransport: "on" }
-  );
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-  const reader = socket.readable.getReader();
-  const writer = socket.writable.getWriter();
-  let pending = new Uint8Array();
-
-  const readLine = async () => {
-    while (true) {
-      for (let i = 0; i + 1 < pending.length; i++) {
-        if (pending[i] === 13 && pending[i + 1] === 10) {
-          const line = decoder.decode(pending.slice(0, i));
-          pending = pending.slice(i + 2);
-          return line;
-        }
-      }
-      const { value, done } = await reader.read();
-      if (done) throw new Error("SMTP server closed the connection unexpectedly.");
-      const combined = new Uint8Array(pending.length + value.length);
-      combined.set(pending);
-      combined.set(value, pending.length);
-      pending = combined;
-      if (pending.length > 8192) throw new Error("SMTP server response exceeded the expected size.");
-    }
-  };
-  const readReply = async () => {
-    const first = await readLine();
-    const match = first.match(/^(\d{3})([- ])/);
-    if (!match) throw new Error("SMTP server returned an invalid response.");
-    const code = Number(match[1]);
-    let line = first;
-    while (line[3] === "-") {
-      line = await readLine();
-      if (!line.startsWith(String(code))) throw new Error("SMTP server returned an invalid multiline response.");
-    }
-    return code;
-  };
-  const expectReply = async expected => {
-    const code = await readReply();
-    if (code !== expected) throw new Error(`SMTP server returned ${code}; expected ${expected}.`);
-  };
-  const command = async (value, expected) => {
-    await writer.write(encoder.encode(`${value}\r\n`));
-    await expectReply(expected);
-  };
-  const base64 = value => {
-    const bytes = encoder.encode(value);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    }
-    return btoa(binary);
-  };
-  const wrapBase64 = value => base64(value).match(/.{1,76}/g)?.join("\r\n") || "";
-  const boundary = `automivex-${crypto.randomUUID()}`;
-  const message = [
-    `From: ${env.EMAIL_FROM}`,
-    `To: ${cleanRecipient}`,
-    `Subject: =?UTF-8?B?${base64(subject)}?=`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    wrapBase64(textBody),
-    `--${boundary}`,
-    "Content-Type: text/html; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    wrapBase64(htmlBody),
-    `--${boundary}--`,
-    ""
-  ].join("\r\n").replace(/(^|\r\n)\./g, "$1..");
-
-  let timeoutId;
-  const timeout = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error("SMTP delivery timed out.")), 15000);
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: env.EMAIL_FROM,
+      to: [cleanRecipient],
+      subject,
+      text: textBody,
+      html: htmlBody
+    })
   });
-  const send = async () => {
-    await expectReply(220);
-    await command("EHLO automivex.com", 250);
-    await command("AUTH LOGIN", 334);
-    await command(base64(env.SMTP_USER), 334);
-    await command(base64(env.SMTP_PASSWORD), 235);
-    await command(`MAIL FROM:<${sender}>`, 250);
-    await command(`RCPT TO:<${cleanRecipient}>`, 250);
-    await command("DATA", 354);
-    await writer.write(encoder.encode(`${message}\r\n.\r\n`));
-    await expectReply(250);
-    await writer.write(encoder.encode("QUIT\r\n"));
-  };
+  let result;
   try {
-    await Promise.race([send(), timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-    await socket.close();
+    result = await response.json();
+  } catch {
+    throw new Error(`Resend API returned an invalid response (${response.status}).`);
   }
-  return { delivered: true };
+  if (!response.ok) {
+    const detail = typeof result?.message === "string" ? result.message : "request rejected";
+    throw new Error(`Resend API rejected email (${response.status}): ${detail}`);
+  }
+  if (typeof result?.id !== "string" || !result.id) {
+    throw new Error("Resend API accepted the request without returning an email ID.");
+  }
+  return { delivered: true, id: result.id };
 }
 async function getUser(request, env) {
   const token = cookieValue(request, "avx_session");
