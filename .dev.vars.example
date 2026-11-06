@@ -1,0 +1,15 @@
+# Copy to .dev.vars for local development. Never commit the real .dev.vars file.
+ENVIRONMENT=development
+APP_URL=http://localhost:8787
+SESSION_SECRET=replace-with-a-long-random-secret-at-least-32-characters
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=465
+SMTP_USER=support@automivex.com
+SMTP_PASSWORD=
+EMAIL_FROM="Automivex <support@automivex.com>"
+ADMIN_EMAILS=you@example.com
+WHATSAPP_COMMUNITY_URL=
+LINKEDIN_URL=https://www.linkedin.com/company/automivex/
+YOUTUBE_URL=
+TIKTOK_URL=
+GITHUB_ORG_URL=https://github.com/Attayab-31

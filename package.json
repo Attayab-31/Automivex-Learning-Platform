@@ -1,0 +1,20 @@
+{
+  "name": "automivex-learning-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Automivex free technology learning portal powered by Cloudflare Workers and D1",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "predeploy": "node scripts/validate-deploy-config.mjs",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply automivex-learning --local",
+    "db:remote": "wrangler d1 migrations apply automivex-learning --remote",
+    "db:create": "wrangler d1 create automivex-learning",
+    "test": "npm run typecheck && node tests/production-smoke.mjs",
+    "typecheck": "node --check src/worker.js && node --check public/app.js && node --check public/certificate.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.45.0"
+  }
+}
