@@ -158,6 +158,8 @@ Edit `.dev.vars` locally. Never commit it:
 | `GITHUB_ORG_URL` | Public GitHub profile or organization | Displayed as the code profile link. |
 | `WHATSAPP_COMMUNITY_URL` | Leave blank until ready | Optional community invite link. |
 
+To open the administration workspace, sign in with an address listed in `ADMIN_EMAILS`. After verification, the app opens `#admin` and hides learner navigation for that account.
+
 Create the local D1 schema and start the Worker:
 
 ```bash

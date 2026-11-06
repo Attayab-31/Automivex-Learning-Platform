@@ -1,6 +1,6 @@
 const app = document.querySelector("#app");
 const toastEl = document.querySelector("#toast");
-const state = { user: null, progress: null, course: null, config: { links: {} }, view: "home", authEmail: "", debugCode: null, quiz: null, quizNonce: null, quizIntegrity: null, lastQuizResult: null, admin: null };
+const state = { user: null, progress: null, course: null, config: { links: {} }, view: "home", authEmail: "", debugCode: null, quiz: null, quizNonce: null, quizIntegrity: null, lastQuizResult: null, admin: null, adminError: null };
 let assessmentIntegrityListenersReady = false;
 const SOCIAL_REQUIREMENTS = [
   { key:"linkedin", label:"LinkedIn", action:"follow" },
@@ -72,14 +72,26 @@ function themeToggle() {
   </button>`;
 }
 function header() {
+  const isAdmin = state.user?.role === "admin";
   const mobileCtas = state.user
-    ? `<div class="mobile-cta">${btn("Dashboard","dashboard","btn small primary full")}${btn("Sign out","logout","btn small outline full")}</div>`
+    ? `<div class="mobile-cta">${btn(isAdmin?"Administration":"Dashboard",isAdmin?"admin":"dashboard","btn small primary full")}${btn("Sign out","logout","btn small outline full")}</div>`
     : `<div class="mobile-cta">${btn("Sign in","auth","btn small soft full")}<button class="btn small primary full" data-action="auth">Get started</button></div>`;
-  return `<header class="topbar"><div class="container nav">${brand()}<nav class="nav-links" aria-label="Primary navigation"><a href="#program" data-action="program">Programme</a><a href="#capstone" data-action="capstone">Capstone</a><a href="#certificates" data-action="certificates">Certificates</a></nav><div class="nav-cta">${state.user?`<span class="nav-user">${esc(state.user.fullName)}</span>${btn("Dashboard","dashboard","btn small soft")}${btn("Sign out","logout","btn small ghost")}`:`${btn("Sign in","auth","btn small ghost")}<button class="btn small primary" data-action="auth">Get started</button>`}${themeToggle()}</div><div class="mobile-nav-group">${themeToggle()}<button class="mobile-menu" type="button" data-action="menu" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-links"><span aria-hidden="true">☰</span></button></div></div><nav class="mobile-links" id="mobile-links" aria-label="Mobile navigation"><a href="#program" data-action="program">Programme</a><a href="#capstone" data-action="capstone">Capstone project</a><a href="#certificates" data-action="certificates">Certificates</a><a href="https://www.automivex.com" target="_blank" rel="noopener">Company website ↗</a>${mobileCtas}</nav></header>`;
+  const primaryLinks = isAdmin
+    ? `<nav class="nav-links" aria-label="Administration navigation"><a href="#admin" data-action="admin">Administration</a></nav>`
+    : `<nav class="nav-links" aria-label="Primary navigation"><a href="#program" data-action="program">Programme</a><a href="#capstone" data-action="capstone">Capstone</a><a href="#certificates" data-action="certificates">Certificates</a></nav>`;
+  const mobileLinks = isAdmin
+    ? `<a href="#admin" data-action="admin">Administration</a>`
+    : `<a href="#program" data-action="program">Programme</a><a href="#capstone" data-action="capstone">Capstone project</a><a href="#certificates" data-action="certificates">Certificates</a><a href="https://www.automivex.com" target="_blank" rel="noopener">Company website ↗</a>`;
+  const brandLink = isAdmin
+    ? `<a class="brand" href="#admin" data-action="admin"><img class="brand-logo brand-logo-light" src="/logo.svg" width="2244" height="498" alt="Automivex"><img class="brand-logo brand-logo-dark" src="/logo-dark.svg" width="2244" height="498" alt="Automivex"></a>`
+    : brand();
+  return `<header class="topbar"><div class="container nav">${brandLink}${primaryLinks}<div class="nav-cta">${state.user?`<span class="nav-user">${esc(state.user.fullName)}</span>${btn(isAdmin?"Administration":"Dashboard",isAdmin?"admin":"dashboard","btn small soft")}${btn("Sign out","logout","btn small ghost")}`:`${btn("Sign in","auth","btn small ghost")}<button class="btn small primary" data-action="auth">Get started</button>`}${themeToggle()}</div><div class="mobile-nav-group">${themeToggle()}<button class="mobile-menu" type="button" data-action="menu" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-links"><span aria-hidden="true">☰</span></button></div></div><nav class="mobile-links" id="mobile-links" aria-label="${isAdmin?"Administration":"Primary"} navigation">${mobileLinks}${isAdmin?"":`<a href="https://www.automivex.com" target="_blank" rel="noopener">Company website ↗</a>`}${mobileCtas}</nav></header>`;
 }
 function footer() {
   const l=state.config.links||{};
-  return `<footer class="footer"><div class="container footer-inner"><div class="footer-main"><div class="footer-brand">${brand()}<p>Independent, practical technology learning from Automivex.</p></div><nav class="footer-link-group" aria-label="Learning links"><b>Learning</b><a href="#program" data-action="program">Programme</a><a href="#capstone" data-action="capstone">Capstone project</a><a href="#certificates" data-action="certificates">Certificates</a></nav><nav class="footer-link-group" aria-label="Company links"><b>Company</b><a href="https://www.automivex.com" target="_blank" rel="noopener">Automivex ↗</a><a href="mailto:hello@automivex.com">Contact</a><a href="${esc(l.linkedin||"https://www.linkedin.com/company/automivex/")}" target="_blank" rel="noopener">LinkedIn ↗</a></nav><nav class="footer-link-group" aria-label="Legal links"><b>Legal</b><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></div><div class="footer-bottom"><small>© ${new Date().getFullYear()} Automivex. All rights reserved.</small><small>Built for learning at your own pace.</small></div></div></footer>`;
+  const isAdmin=state.user?.role==="admin";
+  const learningLinks=isAdmin?"":`<nav class="footer-link-group" aria-label="Learning links"><b>Learning</b><a href="#program" data-action="program">Programme</a><a href="#capstone" data-action="capstone">Capstone project</a><a href="#certificates" data-action="certificates">Certificates</a></nav>`;
+  return `<footer class="footer"><div class="container footer-inner"><div class="footer-main"><div class="footer-brand">${brand()}<p>${isAdmin?"Administrative workspace for Automivex.":"Independent, practical technology learning from Automivex."}</p></div>${learningLinks}<nav class="footer-link-group" aria-label="Company links"><b>Company</b><a href="https://www.automivex.com" target="_blank" rel="noopener">Automivex ↗</a><a href="mailto:hello@automivex.com">Contact</a><a href="${esc(l.linkedin||"https://www.linkedin.com/company/automivex/")}" target="_blank" rel="noopener">LinkedIn ↗</a></nav><nav class="footer-link-group" aria-label="Legal links"><b>Legal</b><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></div><div class="footer-bottom"><small>© ${new Date().getFullYear()} Automivex. All rights reserved.</small><small>${isAdmin?"Secure administration for Automivex.":"Built for learning at your own pace."}</small></div></div></footer>`;
 }
 function courseCard() {
   return `<article class="course-card"><div class="course-cover"><span class="cover-tag">FREE LEARNING PATH</span><div class="cover-title">PYTHON<br><em>API DEVELOPMENT</em></div><div class="cover-code">{ fastapi · postgresql · testing }</div></div><div class="course-card-body"><div class="course-meta"><span>BEGINNER → INTERMEDIATE</span><span>≈ ${state.course?.estimatedHours || 22} HOURS</span></div><h3>Python API Development</h3><p>Learn the fundamentals, practise API engineering and apply your knowledge in an independent production-minded capstone.</p><div class="tag-row"><span>FastAPI</span><span>SQL</span><span>PostgreSQL</span><span>Pytest</span></div><div class="course-card-foot"><span class="free-label"><i></i> Always free</span>${btn("View learning path","program","btn text-btn")}</div></div></article>`;
@@ -112,15 +124,16 @@ function videoTimeText(seconds) {
 }
 
 function workspaceNav(active="dashboard") {
-  const items = [
+  const items = state.user?.role === "admin" ? [
+    ["admin", "Administration", "⚙"]
+  ] : [
     ["dashboard", "Overview", "⌂"],
     ["learning", "My learning", "▦"],
     ["assessment", "Assessment", "✓"],
     ["capstone", "Capstone", "⌘"],
     ["certificates", "Certificates", "◆"]
   ];
-  if (state.user?.role === "admin") items.push(["admin", "Administration", "⚙"]);
-  return `<nav class="workspace-nav" aria-label="Learner pages">${items.map(([view,label,icon])=>`<a href="#${view}" class="${active===view?"active":""}" aria-current="${active===view?"page":"false"}" data-action="${view}"><span aria-hidden="true">${icon}</span>${label}</a>`).join("")}</nav>`;
+  return `<nav class="workspace-nav" aria-label="${state.user?.role==="admin"?"Administration":"Learner"} pages">${items.map(([view,label,icon])=>`<a href="#${view}" class="${active===view?"active":""}" aria-current="${active===view?"page":"false"}" data-action="${view}"><span aria-hidden="true">${icon}</span>${label}</a>`).join("")}</nav>`;
 }
 
 let youtubeApiPromise=null;
@@ -405,6 +418,7 @@ function certificatesView() {
 }
 
 function dashboardView() {
+  if (state.user?.role === "admin") return adminView();
   const p = state.progress || { enrolled:false, completedLessonIds:[], completedLessons:0,totalLessons:10,quizPassed:false,project:null,certificate:null };
   const overall = pct(p.completedLessons,p.totalLessons);
   const accountMenu=`<div class="dash-account"><button class="dash-avatar" type="button" data-action="account" aria-label="Account menu" aria-expanded="false">${esc(state.user.fullName.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase())}</button><div class="dash-account-menu" id="dash-account-menu"><b>${esc(state.user.fullName)}</b><span>${esc(state.user.email||"")}</span><button type="button" data-action="change-email">Change email</button><button type="button" class="danger" data-action="delete-account">Delete account</button></div></div>`;
@@ -429,7 +443,7 @@ function capstoneView() {
   return `${header()}<main class="dashboard-main"><div class="container narrow"><button class="back-link" data-action="dashboard">← Back to dashboard</button><div class="eyebrow">INDEPENDENT PORTFOLIO PROJECT · 2026</div><h1>${esc(c.title)}</h1><p class="lead">${esc(c.summary)}</p><div class="panel"><div class="eyebrow">CORE REQUIREMENTS</div><h2>What your application must demonstrate</h2><ol class="requirement-list">${c.required.map(r=>`<li>${esc(r)}</li>`).join("")}</ol></div><div class="panel"><div class="eyebrow">OPTIONAL EXTENSIONS</div><h2>Go beyond the minimum</h2><ul class="requirement-list">${c.optional.map(r=>`<li>${esc(r)}</li>`).join("")}</ul></div><div class="panel"><div class="eyebrow">SUBMISSION CHECKLIST</div><h2>Repository structure</h2><p class="panel-intro">The automated checker verifies the following public repository items. Core checks must all pass and at least one additional item must be present.</p><ul class="requirement-list">${c.submissionChecks.map(r=>`<li>${esc(r)}</li>`).join("")}</ul><div class="notice"><b>Assessment transparency</b><p>The checker verifies public repository metadata and file presence; it does not execute code or provide a human code review. A passing automated check is followed by an administrator review before certificate issuance.</p></div></div><div class="panel"><div class="eyebrow">RECOMMENDED STACK</div><h2>Build with current, established tools</h2><div class="stack-grid">${["Python 3.11+","FastAPI","Pydantic v2","PostgreSQL","SQLAlchemy 2.x","Alembic","Pytest","Docker Compose","GitHub Actions"].map(x=>`<span>${x}</span>`).join("")}</div><div class="notice"><b>Version note</b><p>The linked freeCodeCamp recording is an older long-form course. Use the current official documentation when package commands or APIs differ: <a href="https://fastapi.tiangolo.com/" target="_blank" rel="noopener">FastAPI</a> · <a href="https://docs.pydantic.dev/latest/" target="_blank" rel="noopener">Pydantic</a> · <a href="https://docs.sqlalchemy.org/en/20/" target="_blank" rel="noopener">SQLAlchemy 2.x</a> · <a href="https://alembic.sqlalchemy.org/" target="_blank" rel="noopener">Alembic</a> · <a href="https://docs.pytest.org/en/stable/" target="_blank" rel="noopener">pytest</a> · <a href="https://docs.github.com/en/actions" target="_blank" rel="noopener">GitHub Actions</a>.</p></div></div><section class="panel project-submission" id="project-submission"><div class="eyebrow">CAPSTONE SUBMISSION</div><h2>${project ? "Repository submission" : "Submit your public repository"}</h2><p class="panel-intro">We check repository file structure only. Keep secrets and personal data out of public repositories. Your project stays yours; this platform stores the repository URL and check results.</p>${project ? `<div class="project-review-status"><span class="status-pill ${project.passed?"good":""}">Automated check ${project.passed?"passed":"needs work"} · ${project.score}/7</span><span class="status-pill ${review==="approved"?"good":""}">${reviewLabel}</span><a href="${esc(project.githubUrl)}" target="_blank" rel="noopener">${esc(project.githubUrl)} ↗</a>${project.reviewNotes?`<p class="notice">Administrator feedback: ${esc(project.reviewNotes)}</p>`:""}</div><ul class="repo-check-list">${(project.checks||[]).map(check=>`<li class="${check.passed?"passed":"missing"}"><span aria-hidden="true">${check.passed?"✓":"·"}</span>${esc(check.label)}</li>`).join("")}</ul>`:""}${blocker?`<div class="notice"><b>Before you submit</b><p>${blocker}</p>${!p.enrolled?btn("Enroll for free","enroll","btn soft"):p.completedLessons<p.totalLessons?btn("Continue learning","learning","btn soft"):btn("Open assessment","assessment","btn soft")}</div>`:""}<form id="project-form" class="form project-submission-form"><label>Public GitHub repository URL<input type="url" name="githubUrl" required maxlength="500" placeholder="https://github.com/username/project" value="${esc(project?.githubUrl||"")}" autocomplete="url"></label><label>Live demo URL <span class="muted-inline">Optional</span><input type="url" name="demoUrl" maxlength="500" placeholder="https://example.com" value="${esc(project?.demoUrl||"")}" autocomplete="url"></label><label class="check-label"><input type="checkbox" name="declaration" required><span>This is my work, I have permission to publish it, and the repository is public. I have removed passwords, API keys and private data.</span></label><button class="btn primary full" type="submit" ${canSubmit?"":"disabled"}>${project?"Update and recheck repository":"Check repository and submit"}</button></form><p class="submission-help">A passing checklist is followed by an administrator review. Approval is required before you can issue a certificate. Updating the repository after approval starts a new review.</p></section>${btn("Return to my learning dashboard","dashboard","btn primary")}</div></main>${footer()}`;
 }
 function adminView() {
-  if (!state.admin) return `${header()}<main class="dashboard-main"><div class="container"><div class="empty-state">Loading administrator overview…</div></div></main>${footer()}`;
+  if (!state.admin) return `${header()}<main class="dashboard-main"><div class="container"><div class="eyebrow">COMPANY ADMINISTRATION</div><h1>Administration dashboard</h1><div class="empty-state" role="${state.adminError?"alert":"status"}">${state.adminError?`${esc(state.adminError)} ${btn("Try again","admin","btn primary")}`:"Loading administrator overview…"}</div></div></main>${footer()}`;
   const a = state.admin;
   const rows = a.submissions.map(s => {
     const review = s.human_review_status || "pending";
@@ -448,7 +462,7 @@ function adminView() {
       <td><div class="review-actions">${s.passed && socialComplete ? `<button class="btn tiny primary" type="button" data-action="review-project" data-submission-id="${esc(s.id)}" data-review-status="approved">Approve</button>` : ""}<button class="btn tiny outline" type="button" data-action="review-project" data-submission-id="${esc(s.id)}" data-review-status="rejected">Request changes</button></div></td>
     </tr>`;
   }).join("");
-  return `${header()}<main class="dashboard-main"><div class="container"><button class="back-link" data-action="dashboard">← Back to dashboard</button><div class="eyebrow">COMPANY ADMINISTRATION</div><h1>Learning programme overview</h1><p class="muted">Private operational metrics and submitted repository checks.</p><div class="admin-stats"><div><small>Learner accounts</small><b>${a.counts.users}</b></div><div><small>Enrollments</small><b>${a.counts.enrollments}</b></div><div><small>Project submissions</small><b>${a.counts.projects}</b></div><div><small>Certificates</small><b>${a.counts.certificates}</b></div></div><section class="panel"><h2>Recent project submissions</h2><p class="panel-intro">Review the public repository checklist and recorded commit before approving a capstone. Social confirmations are learner self-attestations, not independently verified. Approval unlocks certificate issuance only while the repository still matches the verified commit.</p><div class="table-wrap"><table><thead><tr><th>Student</th><th>Repository</th><th>Checklist</th><th>Social confirmations</th><th>Review</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>${rows || `<tr><td colspan="7">No submissions yet.</td></tr>`}</tbody></table></div></section></div></main>${footer()}`;
+  return `${header()}<main class="dashboard-main"><div class="container"><div class="eyebrow">COMPANY ADMINISTRATION</div><h1>Administration dashboard</h1><p class="muted">Private operational metrics and submitted repository checks.</p><div class="admin-stats"><div><small>Learner accounts</small><b>${a.counts.users}</b></div><div><small>Enrollments</small><b>${a.counts.enrollments}</b></div><div><small>Project submissions</small><b>${a.counts.projects}</b></div><div><small>Certificates issued</small><b>${a.counts.certificates}</b></div></div><section class="panel"><h2>Recent project submissions</h2><p class="panel-intro">Review the public repository checklist and recorded commit before approving a capstone. Social confirmations are learner self-attestations, not independently verified. Approval unlocks certificate issuance only while the repository still matches the verified commit.</p><div class="table-wrap"><table><thead><tr><th>Student</th><th>Repository</th><th>Checklist</th><th>Social confirmations</th><th>Review</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>${rows || `<tr><td colspan="7">No submissions yet.</td></tr>`}</tbody></table></div></section></div></main>${footer()}`;
 }
 function render() {
   destroyLessonPlayers();
@@ -486,15 +500,43 @@ async function refresh() {
   state.user = me.user; state.progress = me.progress;
   if (state.view === "dashboard" && !state.user) state.view="home";
 }
+async function loadAdminOverview() {
+  try {
+    state.admin = await api("/api/admin/overview");
+    state.adminError = null;
+  } catch (error) {
+    state.admin = null;
+    state.adminError = "Administrator overview could not be loaded.";
+    console.error(error);
+    if (state.view === "admin") render();
+    throw error;
+  }
+}
 async function go(view) {
   if (state.view === "quiz" && view !== "quiz") await exitAssessmentFullscreen();
   if (["dashboard","learning","assessment","quiz","capstone","certificates","admin"].includes(view)) {
     if (!state.user) { state.view="auth"; render(); return; }
     await refresh();
-    if (view === "admin") {
-      if (state.user.role !== "admin") { toast("Administrator access required.","error"); state.view="dashboard"; }
-      else state.admin = await api("/api/admin/overview");
+    if (state.user?.role === "admin") {
+      view = "admin";
+      state.view = "admin";
+      history.replaceState(null,"","#admin");
     }
+    if (view === "admin") {
+      if (state.user.role !== "admin") {
+        toast("Administrator access required.","error");
+        state.view="dashboard";
+        history.replaceState(null,"","#dashboard");
+        render();
+        return;
+      }
+      await loadAdminOverview();
+    }
+  } else if (state.user?.role === "admin") {
+    view = "admin";
+    state.view = "admin";
+    history.replaceState(null,"","#admin");
+    await loadAdminOverview();
   }
   state.view=view;
   if (view === "home") history.replaceState(null,"",location.pathname);
@@ -509,7 +551,15 @@ async function startAuth(form) {
 async function verifyAuth(form) {
   const code = new FormData(form).get("code");
   await api("/api/auth/verify",{method:"POST",body:JSON.stringify({email:state.authEmail,code})});
-  state.authEmail=""; state.debugCode=null; await refresh(); state.view="dashboard"; history.replaceState(null,"","#dashboard"); render(); toast("You are signed in.");
+  state.authEmail=""; state.debugCode=null; await refresh();
+  state.view=state.user?.role==="admin"?"admin":"dashboard";
+  if (state.view==="admin") {
+    state.admin=null;
+    history.replaceState(null,"","#admin");
+    render();
+    await loadAdminOverview();
+  }
+  history.replaceState(null,"",`#${state.view}`); render(); toast("You are signed in.");
 }
 async function enroll() { const d=await api("/api/enroll",{method:"POST",body:"{}"}); state.progress=d.progress; render(); toast("You are enrolled. Your learning path is ready."); }
 async function submitLessonCheck(form, id) {
@@ -644,7 +694,7 @@ app.addEventListener("click", async e=>{
       }
     }
     else if(action==="change-email") {state.authEmail="";state.debugCode=null;await go("auth");}
-    else if(action==="logout") {await api("/api/auth/logout",{method:"POST",body:"{}"});state.user=null;state.progress=null;state.view="home";history.replaceState(null,"",location.pathname);render();toast("You have signed out.");}
+    else if(action==="logout") {await api("/api/auth/logout",{method:"POST",body:"{}"});state.user=null;state.progress=null;state.admin=null;state.adminError=null;state.view="home";history.replaceState(null,"",location.pathname);render();toast("You have signed out.");}
     else if(action==="delete-account") { if(confirm("Permanently delete your Automivex learning account, progress, submissions and certificate records? This cannot be undone.")){const stopDeleteLoading=beginButtonLoading(el,"Deleting account…");try{await api("/api/account",{method:"DELETE"});state.user=null;state.progress=null;state.view="home";render();toast("Your learning account and associated records were deleted.","success");}finally{stopDeleteLoading?.();}} }
     else if(action.startsWith("lesson:")) {
       const lessonId = action.split(":")[1];
@@ -696,13 +746,24 @@ app.addEventListener("submit", async e=>{
   try { const cfg=await api("/api/config"); state.config=cfg; const c=await api("/api/course"); state.course=c.course; const me=await api("/api/me"); state.user=me.user;state.progress=me.progress; }
   catch(err) { console.error(err); }
   const hashView = location.hash.replace(/^#/,"");
-  if (state.user && ["dashboard","learning","assessment","quiz","capstone","certificates","admin"].includes(hashView)) state.view=hashView;
+  if (state.user?.role === "admin") {
+    state.view="admin";
+    history.replaceState(null,"","#admin");
+    try { await loadAdminOverview(); }
+    catch(err) { console.error(err); }
+  } else if (state.user && ["dashboard","learning","assessment","quiz","capstone","certificates"].includes(hashView)) state.view=hashView;
   render();
 })();
 window.addEventListener("hashchange", async ()=>{
   const hash=location.hash.replace(/^#/,"");
   if (!state.user) return;
-  const allowed=["dashboard","learning","assessment","quiz","capstone","certificates","admin"];
+  const allowed=state.user.role==="admin"
+    ? ["dashboard","admin"]
+    : ["dashboard","learning","assessment","quiz","capstone","certificates"];
+  if (state.user.role==="admin" && !allowed.includes(hash)) {
+    history.replaceState(null,"","#admin");
+    return;
+  }
   if (allowed.includes(hash)) {
     await go(hash);
   }
