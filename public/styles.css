@@ -2780,6 +2780,106 @@ td small {
   border-color: var(--emerald-border);
 }
 
+.capstone-submission-review {
+  margin: var(--space-5) 0;
+  padding: clamp(16px, 3vw, 24px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface-elevated);
+  scroll-margin-top: var(--space-6);
+}
+
+.capstone-submission-review-heading,
+.capstone-review-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.capstone-submission-review-heading h3 {
+  margin: 4px 0;
+  font-size: clamp(18px, 3vw, 22px);
+}
+
+.capstone-submission-review-heading p,
+.capstone-submission-review-detail p,
+.capstone-checks-heading p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.capstone-submission-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: var(--space-4);
+  margin: var(--space-5) 0;
+}
+
+.capstone-submission-review-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.capstone-submission-review-detail > small,
+.capstone-submission-review .social-attestation-status {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.capstone-repository-url {
+  max-width: 100%;
+  color: var(--text-primary);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.capstone-review-links {
+  justify-content: flex-start;
+  margin-top: var(--space-2);
+}
+
+.capstone-review-links .btn {
+  min-height: 38px;
+}
+
+.capstone-checks-heading {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.capstone-checks-heading h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.capstone-submission-review .repo-check-list {
+  margin-top: var(--space-3);
+}
+
+.capstone-submission-review .social-attestation-status {
+  display: block;
+  margin-top: var(--space-4);
+  line-height: 1.6;
+}
+
+#project-submission {
+  scroll-margin-top: var(--space-6);
+}
+
 .review-actions {
   display: flex;
   flex-wrap: wrap;

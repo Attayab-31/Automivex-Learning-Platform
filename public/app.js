@@ -416,7 +416,48 @@ function certificatesView() {
   ];
   return `${header()}<main class="workspace-main"><div class="workspace-shell"><aside>${workspaceNav("certificates")}<div class="workspace-course-summary"><small>ACHIEVEMENTS</small><b>Certificate centre</b><span>${cert?"1 certificate issued":"No certificate yet"}</span></div></aside><section class="workspace-content"><div class="workspace-page-heading"><div><div class="eyebrow">CERTIFICATE CENTRE</div><h1>Your certificates</h1><p>Review completion eligibility and access your verifiable course credential.</p></div></div>${cert?`<article class="certificate-feature"><div class="certificate-mini-preview"><div class="mini-kicker">AUTOMIVEX</div><div class="mini-seal">A</div><small>CERTIFICATE OF COMPLETION</small><b>${esc(cert.recipientName||state.user.fullName)}</b><span>Python API Development</span></div><div class="certificate-feature-details"><span class="status-pill good">Verified certificate</span><h2>Python API Development</h2><p><small>Certificate ID</small><b>${esc(cert.code)}</b></p><p><small>Issued</small><b>${new Date(cert.issuedAt.replace(" ","T")+"Z").toLocaleDateString()}</b></p><div class="certificate-feature-actions"><a class="btn primary" href="/certificate.html?code=${encodeURIComponent(cert.code)}">View & print certificate</a><a class="btn outline" href="/verify/${encodeURIComponent(cert.code)}">Open verification page ↗</a></div></div></article>`:`<section class="certificate-empty"><div class="certificate-progress-art"><div class="progress-disc">${pct(p.completedLessons,p.totalLessons)}%</div></div><div><span class="status-pill">Not yet issued</span><h2>Complete the programme to earn your certificate</h2><p class="panel-intro">The certificate unlocks after all five requirements below are complete, including administrator approval of a passing capstone.</p><div class="certificate-steps">${steps.map((step,index)=>`<div class="${step.done?"complete":""}"><span>${step.done?"✓":String(index+1)}</span><b>${step.title}</b><small>${esc(step.detail)}</small></div>`).join("")}</div>${project?.reviewNotes?`<div class="notice"><b>Review feedback</b><p>${esc(project.reviewNotes)}</p></div>`:""}<div class="certificate-empty-actions">${btn(p.completedLessons<p.totalLessons?"Continue learning":!p.quizPassed?"Start assessment":"Open capstone",p.completedLessons<p.totalLessons?"learning":!p.quizPassed?"quiz":"capstone","btn primary")}${btn("View programme requirements","capstone-details","btn outline")}</div></div></section>`}</section></div></main>${footer()}`;
 }
-
+function submittedProjectCard(project, reviewLabel) {
+  const review = project.humanReviewStatus || "pending";
+  const reviewMessage = review === "approved"
+    ? "An administrator approved this submission."
+    : review === "rejected"
+      ? project.reviewNotes
+        ? `An administrator requested changes: ${project.reviewNotes}`
+        : "An administrator requested changes. Update the repository and submit it again for review."
+      : "Your submission is waiting for administrator review. Any resubmission starts a new review.";
+  const submittedAt = String(project.submittedAt || "");
+  const parsedDate = new Date(submittedAt.includes("T") ? submittedAt : `${submittedAt.replace(" ", "T")}Z`);
+  const submittedDate = Number.isNaN(parsedDate.getTime()) ? "Date unavailable" : parsedDate.toLocaleString();
+  const repositoryUrl = String(project.githubUrl || "").replace(/\/+$/, "");
+  return `<section class="capstone-submission-review" aria-labelledby="submitted-project-heading">
+    <div class="capstone-submission-review-heading">
+      <div>
+        <div class="eyebrow">YOUR SUBMISSION</div>
+        <h3 id="submitted-project-heading">Review your capstone submission</h3>
+        <p>Submitted ${esc(submittedDate)}</p>
+      </div>
+      <span class="status-pill ${project.passed?"good":""}">Automated check ${project.passed?"passed":"needs work"} · ${project.score}/7</span>
+    </div>
+    <div class="capstone-submission-review-grid">
+      <div class="capstone-submission-review-detail">
+        <small>PUBLIC REPOSITORY</small>
+        <a class="capstone-repository-url" href="${esc(repositoryUrl)}" target="_blank" rel="noopener">${esc(project.githubUrl)} ↗</a>
+        <div class="capstone-review-links">
+          <a class="btn outline small" href="${esc(repositoryUrl)}" target="_blank" rel="noopener">Review repository ↗</a>
+          ${project.commitSha?`<a class="btn outline small" href="${esc(repositoryUrl)}/commit/${encodeURIComponent(project.commitSha)}" target="_blank" rel="noopener">View checked commit ↗</a>`:""}
+        </div>
+      </div>
+      <div class="capstone-submission-review-detail">
+        <small>ADMINISTRATOR REVIEW</small>
+        <span class="status-pill ${review==="approved"?"good":""}">${esc(reviewLabel)}</span>
+        <p>${esc(reviewMessage)}</p>
+      </div>
+    </div>
+    ${project.reviewNotes && review !== "rejected"?`<div class="notice"><b>Administrator feedback</b><p>${esc(project.reviewNotes)}</p></div>`:""}
+    <div class="capstone-checks-heading"><h4>Automated structure checks</h4><p>These checks inspect repository files; they do not run or review your code.</p></div>
+    <ul class="repo-check-list">${(project.checks||[]).map(check=>`<li class="${check.passed?"passed":"missing"}"><span aria-hidden="true">${check.passed?"✓":"·"}</span>${esc(check.label)}</li>`).join("")}</ul>
+  </section>`;
+}
 function dashboardView() {
   if (state.user?.role === "admin") return adminView();
   const p = state.progress || { enrolled:false, completedLessonIds:[], completedLessons:0,totalLessons:10,quizPassed:false,project:null,certificate:null };
@@ -483,7 +524,17 @@ function render() {
     const submitButton = form?.querySelector('button[type="submit"]');
     if (submitButton && !socialConfigured) submitButton.disabled = true;
     const project = state.progress?.project;
-    const reviewStatus = $(".project-review-status");
+    let reviewStatus = $(".project-review-status");
+    if (project && reviewStatus) {
+      const review = project.humanReviewStatus || "pending";
+      const reviewLabel = review === "approved" ? "Administrator approved" : review === "rejected" ? "Changes requested" : "Administrator review pending";
+      const existingChecks = reviewStatus.nextElementSibling;
+      const replacement = document.createElement("template");
+      replacement.innerHTML = submittedProjectCard(project, reviewLabel);
+      reviewStatus.replaceWith(replacement.content.firstElementChild);
+      if (existingChecks?.classList.contains("repo-check-list")) existingChecks.remove();
+      reviewStatus = $(".project-review-status");
+    }
     if (project && reviewStatus) {
       const attestationStatus = document.createElement("small");
       attestationStatus.className = "social-attestation-status";
@@ -634,7 +685,11 @@ async function submitProject(form) {
   const f=new FormData(form);
   const socialAttestations=Object.fromEntries(SOCIAL_REQUIREMENTS.map(({key})=>[key,f.getAll("socialAttestations").includes(key)]));
   const d=await api("/api/project/submit",{method:"POST",body:JSON.stringify({githubUrl:f.get("githubUrl"),demoUrl:f.get("demoUrl"),declaration:f.get("declaration")==="on",socialAttestations})});
-  await refresh(); state.view="dashboard"; render(); toast(d.result.message,d.result.passed?"success":"error");
+  await refresh();
+  state.view="capstone";
+  render();
+  document.querySelector("#project-submission")?.scrollIntoView({behavior:"smooth",block:"start"});
+  toast(d.result.message,d.result.passed?"success":"error");
 }
 async function reviewProject(submissionId, status) {
   const note = window.prompt(status === "approved" ? "Optional review note for this approval:" : "Optional feedback for the learner:", "");
