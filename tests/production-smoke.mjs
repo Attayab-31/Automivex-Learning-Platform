@@ -59,11 +59,40 @@ const protectedCertificateEmail = await request("/api/admin/certificates/email",
 assert(protectedCertificateEmail.response.status === 401, "Certificate email resend did not reject an unauthenticated request");
 
 const missingCertificate = await request("/api/certificates/AVX-NOT-FOUND");
-assert(missingCertificate.response.status === 404 && missingCertificate.body.valid === false, "Certificate verification failed");
+assert(missingCertificate.response.status === 404 && missingCertificate.body.valid === false &&
+  missingCertificate.body.status === "not_found", "Malformed certificate ID did not return a generic not-found response");
+assert(!("recipientName" in missingCertificate.body) && !("evidence" in missingCertificate.body) &&
+  !("email" in missingCertificate.body), "Malformed certificate lookup exposed certificate or learner data");
+
+const unknownCertificate = await request("/api/certificates/AVX-2026-ABCDEFGH");
+assert(unknownCertificate.response.status === 404 && unknownCertificate.body.valid === false &&
+  unknownCertificate.body.status === "not_found", "Unknown certificate ID did not return a generic not-found response");
+assert(Object.keys(unknownCertificate.body).sort().join(",") === "status,valid",
+  "Unknown certificate lookup exposed unexpected data");
+
+const unknownLongCertificate = await request("/api/certificates/AVX-2026-ABCDEFGHJKLMNPQRSTUVWXYZ23");
+assert(unknownLongCertificate.response.status === 404 && unknownLongCertificate.body.status === "not_found",
+  "Unknown long-format certificate ID did not return a generic not-found response");
+assert(!("evidence" in unknownLongCertificate.body) && !("recipientName" in unknownLongCertificate.body),
+  "Unknown long-format lookup exposed certificate claims");
+
+const invalidLengthCertificate = await request("/api/certificates/AVX-2026-ABCDEFGHI");
+assert(invalidLengthCertificate.response.status === 404 && invalidLengthCertificate.body.status === "not_found",
+  "Certificate IDs with unsupported lengths were not rejected");
+
+const nestedCertificatePath = await request("/api/certificates/unrelated/AVX-2026-ABCDEFGH");
+assert(nestedCertificatePath.response.status === 404 && nestedCertificatePath.body.status === "not_found",
+  "Nested certificate lookup path was not rejected as not found");
 
 const missingVerificationPage = await request("/verify/AVX-NOT-FOUND");
 assert(missingVerificationPage.response.status === 404, "Unknown public certificate URL did not return 404");
 assert(typeof missingVerificationPage.body === "string" && missingVerificationPage.body.includes("Certificate not found"), "Unknown certificate page did not render the not-found view");
+assert(!missingVerificationPage.body.includes("evidence_json") && !missingVerificationPage.body.includes("email"),
+  "Unknown certificate page exposed internal or learner data");
+
+const nestedVerificationPath = await request("/verify/unrelated/AVX-2026-ABCDEFGH");
+assert(nestedVerificationPath.response.status === 404 && nestedVerificationPath.body.includes("Certificate not found"),
+  "Nested public certificate path did not render the generic not-found view");
 
 const verificationScript = await request("/verify.js");
 assert(verificationScript.response.status === 200 && verificationScript.body.includes("data-copy-link"), "Certificate share-link helper was not served");
@@ -72,5 +101,19 @@ const securityHeaders = health.response.headers;
 assert(securityHeaders.get("x-content-type-options") === "nosniff", "Missing nosniff header");
 assert(securityHeaders.get("content-security-policy")?.includes("frame-ancestors 'none'"), "Missing CSP frame restriction");
 assert(securityHeaders.get("cache-control") === "no-store", "API responses are cacheable");
+
+const verificationIp = `test-${Date.now()}-${process.pid}`;
+for (let attempt = 0; attempt < 60; attempt++) {
+  const result = await request("/api/certificates/AVX-2026-ABCDEFGHJKLMNPQRSTUVWXYZ23", {
+    headers: { "CF-Connecting-IP": verificationIp }
+  });
+  assert(result.response.status === 404, `Certificate verification was unexpectedly throttled at request ${attempt + 1}`);
+}
+const throttledVerification = await request("/api/certificates/AVX-2026-ABCDEFGHJKLMNPQRSTUVWXYZ23", {
+  headers: { "CF-Connecting-IP": verificationIp }
+});
+assert(throttledVerification.response.status === 429 &&
+  throttledVerification.response.headers.get("retry-after") === "60",
+  "Certificate verification did not enforce its per-IP rate limit");
 
 console.log("Production smoke tests passed");

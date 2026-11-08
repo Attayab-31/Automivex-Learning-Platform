@@ -195,7 +195,7 @@ All API routes are implemented in [`src/worker.js`](src/worker.js). JSON request
 | `POST /api/admin/certificates/email` | Admin | `{ code }` | `{ ok, code, emailSent, message }`; resend the verification-link email for an active certificate |
 | `POST /api/admin/certificates/name` | Admin | `{ code, fullName, reason }` | `{ ok, code, recipientName, corrected, revision }`; only valid, active certificates can be corrected |
 | `POST /api/certificate/issue` | Signed in and eligible | `{}` | `{ ok, issued, created, code, verifyUrl, email? }` |
-| `GET /api/certificates/{code}` | Public | — | Certificate validity and published verification details; unknown code returns `404` and `{ valid: false }` |
+| `GET /api/certificates/{code}` | Public, rate-limited to 60 requests per IP per minute | — | Certificate validity and published verification details; malformed or unknown code returns `404` and `{ valid: false, status: "not_found" }` without learner data |
 | `GET /verify/{code}` | Public | — | Human-readable HTML certificate verification page |
 | `DELETE /api/account` | Signed in | — | `{ ok, message }` and clears the session cookie |
 
@@ -205,6 +205,7 @@ All API routes are implemented in [`src/worker.js`](src/worker.js). JSON request
 - Assessment requires all lessons, one-use session nonce, written evidence, the AI-use declaration, at least 30 seconds, and an 80% knowledge score. The browser reports focus/fullscreen/copy-paste events; these checks are not a guarantee of academic integrity.
 - Capstone requires a public GitHub repository, learner declaration, all configured social attestations, and a passing repository structure check. The social actions are self-attested.
 - Certificate issuance also requires administrator approval and revalidates the submitted repository state.
+- Certificate verification accepts only exact certificate-code routes. New codes use 26 random characters; existing 8-character codes remain valid. Malformed and unknown IDs have the same generic not-found response, and public lookups are rate-limited to reduce enumeration. Verification publishes only the certificate claims needed to verify it; the API does not return learner email, account records, or internal evidence payloads.
 - Approving an eligible capstone issues the certificate and sends the learner an email with its public verification link. If the learner is not eligible yet or the repository changed, approval remains saved and an administrator can retry issuance after the issue is resolved.
 - Previously approved capstones have an administrator-only issuance action. The learner’s certificate centre refreshes the account progress whenever it is opened; a page that was already open at issuance needs a reload or a visit to the certificate centre.
 - Administrators can resend the notification for an active, valid certificate from the issued-certificates table. Email delivery failures are logged and surfaced, and can be retried without issuing a duplicate certificate.

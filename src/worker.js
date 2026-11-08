@@ -1,6 +1,7 @@
 import { verifyGithubRepository } from "./github.js";
 
 const COURSE_ID = "python-api-2026";
+const CERTIFICATE_CODE_PATTERN = /^AVX-\d{4}-(?:[23456789A-HJ-NP-Z]{8}|[23456789A-HJ-NP-Z]{26})$/;
 const COURSE = {
   id: COURSE_ID,
   title: "Python API Development",
@@ -440,7 +441,7 @@ async function issueCertificateForUser(user, request, env, actorId = null) {
   let cert = await env.DB.prepare("SELECT certificate_code,recipient_name,course_title,issued_at FROM certificates WHERE user_id=? AND course_id=?").bind(user.id, COURSE_ID).first();
   let created = false;
   if (!cert) {
-    const code = `AVX-${new Date().getFullYear()}-${randomCode(8)}`;
+    const code = `AVX-${new Date().getFullYear()}-${randomCode(26)}`;
     const evidence = {
       courseId: COURSE_ID,
       courseVersion: "2026.1",
@@ -983,10 +984,16 @@ async function api(request, env) {
     }
 
     if (path.startsWith("/api/certificates/") && method === "GET") {
-      const code = path.split("/").pop();
-      const cert = await env.DB.prepare(`SELECT c.certificate_code,c.recipient_name,c.course_title,c.issued_at,c.revoked_at,c.evidence_json,c.signature,u.full_name,u.email
-        FROM certificates c JOIN users u ON u.id=c.user_id WHERE c.certificate_code=?`).bind(code).first();
-      if (!cert) return json({ valid: false }, 404);
+      const match = path.match(/^\/api\/certificates\/([^/]+)$/);
+      const code = match?.[1] || "";
+      if (!CERTIFICATE_CODE_PATTERN.test(code)) return json({ valid: false, status: "not_found" }, 404);
+      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+      if (!(await rateLimit(env, `certificate-verify:${ip}`, 60, 60))) {
+        return json({ valid: false, status: "rate_limited" }, 429, { "retry-after": "60" });
+      }
+      const cert = await env.DB.prepare(`SELECT certificate_code,recipient_name,course_title,issued_at,revoked_at,evidence_json,signature
+        FROM certificates WHERE certificate_code=?`).bind(code).first();
+      if (!cert) return json({ valid: false, status: "not_found" }, 404);
       let evidence = null;
       try { evidence = cert.evidence_json ? JSON.parse(cert.evidence_json) : null; }
       catch { evidence = null; }
@@ -995,7 +1002,7 @@ async function api(request, env) {
         const signedNameMatches = evidence.recipientName === undefined || evidence.recipientName === cert.recipient_name;
         signatureValid = signedNameMatches && await hmacSha256(cert.evidence_json, env.SESSION_SECRET || "") === cert.signature;
       }
-      return json({ valid: !cert.revoked_at && signatureValid, code: cert.certificate_code, recipientName: cert.recipient_name, courseTitle: cert.course_title, issuedAt: cert.issued_at, issuer: "Automivex", status: cert.revoked_at ? "revoked" : signatureValid ? "valid" : "invalid_signature", evidence });
+      return json({ valid: !cert.revoked_at && signatureValid, code: cert.certificate_code, recipientName: cert.recipient_name, courseTitle: cert.course_title, issuedAt: cert.issued_at, issuer: "Automivex", status: cert.revoked_at ? "revoked" : signatureValid ? "valid" : "invalid_signature" });
     }
 
     if (path === "/api/admin/overview" && method === "GET") {
@@ -1018,14 +1025,21 @@ async function api(request, env) {
 }
 
 async function verificationPageThemed(request, env) {
-  const code = new URL(request.url).pathname.split("/").pop();
+  const match = new URL(request.url).pathname.match(/^\/verify\/([^/]+)$/);
+  const code = match?.[1] || "";
+  const head = (title, description, canonical) => `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090d16"><meta property="og:type" content="website"><meta property="og:site_name" content="Automivex Learning"><meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:url" content="${escapeHtml(canonical)}"><meta name="twitter:card" content="summary"><link rel="canonical" href="${escapeHtml(canonical)}"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><script src="/theme.js"></script><link rel="stylesheet" href="/styles.css"><title>${escapeHtml(title)}</title></head>`;
+  const notFound = () => {
+    const notFoundUrl = `${appUrl(env, request)}/verify/`;
+    return html(`<!doctype html><html lang="en">${head("Certificate not found","This certificate ID could not be verified.",notFoundUrl)}<body><main class="verification-page"><div class="verification-container"><button class="theme-toggle verification-theme" type="button" aria-label="Switch theme" title="Switch theme">Switch theme</button><section class="verification-card"><div class="eyebrow">AUTOMIVEX VERIFICATION</div><h1>Certificate not found</h1><p>This certificate ID could not be verified.</p><a class="btn outline" href="/">Return to Automivex</a></section></div></main></body></html>`,404);
+  };
+  if (!CERTIFICATE_CODE_PATTERN.test(code)) return notFound();
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  if (!(await rateLimit(env, `certificate-verify:${ip}`, 60, 60))) {
+    return html(`<!doctype html><html lang="en">${head("Try again later","Certificate verification is temporarily rate limited.",new URL(request.url).href)}<body><main class="verification-page"><div class="verification-container"><section class="verification-card"><div class="eyebrow">AUTOMIVEX VERIFICATION</div><h1>Try again later</h1><p>Too many verification requests. Please wait a minute and try again.</p></section></div></main></body></html>`,429);
+  }
   const cert = await env.DB.prepare(`SELECT certificate_code,recipient_name,course_title,issued_at,revoked_at,evidence_json,signature
     FROM certificates WHERE certificate_code=?`).bind(code).first();
-  const head = (title, description, canonical) => `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090d16"><meta property="og:type" content="website"><meta property="og:site_name" content="Automivex Learning"><meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:url" content="${escapeHtml(canonical)}"><meta name="twitter:card" content="summary"><link rel="canonical" href="${escapeHtml(canonical)}"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><script src="/theme.js"></script><link rel="stylesheet" href="/styles.css"><title>${escapeHtml(title)}</title></head>`;
-  if (!cert) {
-    const notFoundUrl = `${appUrl(env, request)}/verify/${encodeURIComponent(code)}`;
-    return html(`<!doctype html><html lang="en">${head("Certificate not found","This certificate ID could not be verified.",notFoundUrl)}<body><main class="verification-page"><div class="verification-container"><button class="theme-toggle verification-theme" type="button" aria-label="Switch theme" title="Switch theme">Switch theme</button><section class="verification-card"><div class="eyebrow">AUTOMIVEX VERIFICATION</div><h1>Certificate not found</h1><p>This certificate ID could not be verified.</p><a class="btn outline" href="/">Return to Automivex</a></section></div></main></body></html>`,404);
-  }
+  if (!cert) return notFound();
   const verifyUrl = `${appUrl(env, request)}/verify/${encodeURIComponent(cert.certificate_code)}`;
   let evidence = null;
   try { evidence = cert.evidence_json ? JSON.parse(cert.evidence_json) : null; }
@@ -1049,11 +1063,19 @@ async function verificationPageThemed(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const response = url.pathname.startsWith("/api/")
-      ? await api(request, env)
-      : url.pathname.startsWith("/verify/") && request.method === "GET"
-        ? await verificationPageThemed(request, env)
-        : await env.ASSETS.fetch(request);
+    let response;
+    if (url.pathname.startsWith("/api/")) {
+      response = await api(request, env);
+    } else if (url.pathname.startsWith("/verify/") && request.method === "GET") {
+      try {
+        response = await verificationPageThemed(request, env);
+      } catch (error) {
+        console.error("Certificate verification page failed", error?.message || error);
+        response = html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verification unavailable</title><link rel="stylesheet" href="/styles.css"></head><body><main class="verification-page"><div class="verification-container"><section class="verification-card"><div class="eyebrow">AUTOMIVEX VERIFICATION</div><h1>Verification temporarily unavailable</h1><p>Please try again shortly.</p><a class="btn outline" href="/">Return to Automivex</a></section></div></main></body></html>`, 503);
+      }
+    } else {
+      response = await env.ASSETS.fetch(request);
+    }
     const headers = new Headers(response.headers);
     headers.set("x-content-type-options", "nosniff");
     headers.set("referrer-policy", "strict-origin-when-cross-origin");
