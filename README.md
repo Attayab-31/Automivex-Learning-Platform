@@ -178,18 +178,23 @@ All API routes are implemented in [`src/worker.js`](src/worker.js). JSON request
 | `GET /api/health` | Public | — | `{ ok, service, timestamp }` |
 | `GET /api/course` | Public | — | `{ course }`; correct lesson answers are not included |
 | `GET /api/config` | Public | — | `{ links }` with configured public links |
-| `POST /api/auth/start` | Public | `{ email, fullName?, acceptTerms?, marketingOptIn? }` | `{ ok, message }`; local debug mode may also return `debugCode` |
+| `POST /api/auth/start` | Public | `{ intent: "signin" \| "signup", email, fullName?, acceptTerms?, marketingOptIn? }` | `{ ok, message }`; local debug mode may also return `debugCode` |
 | `POST /api/auth/verify` | Public | `{ email, code }` | `{ ok, user }` and sets the session cookie |
 | `POST /api/auth/logout` | Public | — | `{ ok: true }` and clears the session cookie |
 | `GET /api/me` | Public | — | `{ user: null }`, or `{ user, progress }` |
+| `PUT /api/profile` | Signed in, before certificate issuance | `{ fullName }` | `{ ok, user }`; issued certificate names are locked |
 | `POST /api/enroll` | Signed in | `{}` | `{ ok, progress }` |
 | `POST /api/lessons/{lessonId}/complete` | Signed in | `{ choice, reflection }` | `{ ok, progress }` after a correct check and ordered completion |
 | `GET /api/quiz` | Signed in, enrolled, lessons complete | — | `{ nonce, questions, prompts }` |
 | `POST /api/quiz/submit` | Signed in | `{ nonce, answers, evidence, aiDeclaration, integrity }` | `{ ok, score, total, percentage, passed, message }` |
 | `POST /api/project/submit` | Signed in | `{ githubUrl, demoUrl?, declaration, socialAttestations }` | `{ ok, result, progress }` |
 | `GET /api/admin/overview` | Admin | — | `{ counts, submissions }` |
-| `POST /api/admin/projects/review` | Admin | `{ submissionId, status: "approved" \| "rejected", notes? }` | `{ ok: true }` |
-| `POST /api/certificate/issue` | Signed in and eligible | `{}` | `{ ok, code, verifyUrl }` |
+| `GET /api/admin/certificates?q=...` | Admin | Optional search by certificate ID, recipient, learner, or email | `{ certificates }`; newest 100 when no query is provided |
+| `POST /api/admin/projects/review` | Admin | `{ submissionId, status: "approved" \| "rejected", notes? }` | `{ ok, certificate? }`; approval attempts issuance when the learner meets every requirement and the repository is unchanged |
+| `POST /api/admin/certificate/issue` | Admin | `{ submissionId }` | `{ ok, issued, created, code, verifyUrl, email? }`; retry issuance for an already-approved capstone |
+| `POST /api/admin/certificates/email` | Admin | `{ code }` | `{ ok, code, emailSent, message }`; resend the verification-link email for an active certificate |
+| `POST /api/admin/certificates/name` | Admin | `{ code, fullName, reason }` | `{ ok, code, recipientName, corrected, revision }`; only valid, active certificates can be corrected |
+| `POST /api/certificate/issue` | Signed in and eligible | `{}` | `{ ok, issued, created, code, verifyUrl, email? }` |
 | `GET /api/certificates/{code}` | Public | — | Certificate validity and published verification details; unknown code returns `404` and `{ valid: false }` |
 | `GET /verify/{code}` | Public | — | Human-readable HTML certificate verification page |
 | `DELETE /api/account` | Signed in | — | `{ ok, message }` and clears the session cookie |
@@ -200,6 +205,23 @@ All API routes are implemented in [`src/worker.js`](src/worker.js). JSON request
 - Assessment requires all lessons, one-use session nonce, written evidence, the AI-use declaration, at least 30 seconds, and an 80% knowledge score. The browser reports focus/fullscreen/copy-paste events; these checks are not a guarantee of academic integrity.
 - Capstone requires a public GitHub repository, learner declaration, all configured social attestations, and a passing repository structure check. The social actions are self-attested.
 - Certificate issuance also requires administrator approval and revalidates the submitted repository state.
+- Approving an eligible capstone issues the certificate and sends the learner an email with its public verification link. If the learner is not eligible yet or the repository changed, approval remains saved and an administrator can retry issuance after the issue is resolved.
+- Previously approved capstones have an administrator-only issuance action. The learner’s certificate centre refreshes the account progress whenever it is opened; a page that was already open at issuance needs a reload or a visit to the certificate centre.
+- Administrators can resend the notification for an active, valid certificate from the issued-certificates table. Email delivery failures are logged and surfaced, and can be retried without issuing a duplicate certificate.
+- Sign-in and sign-up use email one-time codes. New accounts require a display name and acceptance of programme terms; returning learners sign in with their verified email without re-entering their name.
+- Learners can update the name displayed on their profile before certificate issuance. Issuance snapshots and signs the recipient name as part of the credential evidence; later profile changes cannot silently change an already-issued certificate.
+- Administrators can search for an issued certificate and correct its recipient name. Each correction requires a reason, updates and re-signs the recipient claim, and atomically records the previous name, new name, administrator, and reason in the audit log. Revoked or invalidly signed credentials cannot be corrected.
+- Learners can share a public verification link on LinkedIn or copy the link. To add it to LinkedIn's Licenses & Certifications profile section, learners enter the issuer, title, issue date, credential ID, and verification URL themselves; the platform does not request LinkedIn account access or claim to add credentials automatically.
+
+### Credential verification and sharing
+
+The public verification URL is the canonical share link. Its server-rendered page reports the current issuer-side signature and revocation status and includes link-preview metadata for social sharing. LinkedIn sharing opens its share composer with that URL; the learner decides whether and what to post. A correction is shown on the verification page without publishing the old recipient name.
+
+This implementation provides issuer-hosted online verification with an HMAC signature; it is not an Open Badges or W3C Verifiable Credential conformant credential file. Those standards inform the separation of issuer claims, recipient, evidence, status, and verification:
+
+- [1EdTech Open Badges](https://www.1edtech.org/standards/open-badges) describes signed, shareable achievement claims tied to a specific earner.
+- [W3C Verifiable Credentials Data Model 2.0](https://www.w3.org/TR/vc-data-model-2.0/) defines issuer, holder, verifier, claims, and integrity protection.
+- [LinkedIn Help on editing profile sections](https://www.linkedin.com/help/linkedin/answer/a546603/add-or-remove-credentials-from-your-profile) covers member-managed profile updates.
 
 <details>
   <summary>Example API requests</summary>
@@ -209,7 +231,15 @@ Start email sign-in:
 ```bash
 curl -X POST http://localhost:8787/api/auth/start \
   -H "Content-Type: application/json" \
-  -d '{"email":"learner@example.com","fullName":"Example Learner","acceptTerms":true}'
+  -d '{"intent":"signin","email":"learner@example.com"}'
+```
+
+Start a new learner registration:
+
+```bash
+curl -X POST http://localhost:8787/api/auth/start \
+  -H "Content-Type: application/json" \
+  -d '{"intent":"signup","email":"learner@example.com","fullName":"Example Learner","acceptTerms":true}'
 ```
 
 Verify the code and save the returned session cookie:

@@ -300,6 +300,10 @@ function setCookie(token, maxAge) {
 function clearCookie() { return "avx_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"; }
 function cleanEmail(value) { return String(value || "").trim().toLowerCase().slice(0, 254); }
 function validEmail(value) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value); }
+function cleanDisplayName(value) {
+  if (typeof value !== "string") return "";
+  return value.normalize("NFC").trim().replace(/\s+/g, " ");
+}
 function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function adminEmails(env) { return String(env.ADMIN_EMAILS || "").split(",").map(cleanEmail).filter(Boolean); }
 function socialProfileLinks(env) {
@@ -386,6 +390,84 @@ async function sendEmail(env, to, subject, textBody, htmlBody) {
     throw new Error("Resend API accepted the request without returning an email ID.");
   }
   return { delivered: true, id: result.id };
+}
+async function sendCertificateEmail(user, certificate, request, env, actorId = null) {
+  const verifyUrl = `${appUrl(env, request)}/verify/${encodeURIComponent(certificate.code)}`;
+  const issuedDate = new Date(certificate.issuedAt.replace(" ", "T") + "Z").toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+  const subject = "Your Automivex certificate is ready";
+  const text = `Hello ${user.fullName},\n\nYour certificate for ${certificate.courseTitle} has been issued.\n\nCertificate ID: ${certificate.code}\nIssued: ${issuedDate}\nVerify and share your certificate: ${verifyUrl}\n\nYou can use this link to share your certificate on LinkedIn or add it to your Licenses & Certifications profile section.\n\nAutomivex Learning`;
+  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033"><h1 style="font-size:22px">Your certificate is ready</h1><p>Hello ${escapeHtml(user.fullName)},</p><p>Your certificate for <strong>${escapeHtml(certificate.courseTitle)}</strong> has been issued.</p><p><strong>Certificate ID:</strong> ${escapeHtml(certificate.code)}<br><strong>Issued:</strong> ${escapeHtml(issuedDate)}</p><p><a href="${escapeHtml(verifyUrl)}" style="display:inline-block;padding:12px 18px;background:#0284c7;color:#fff;text-decoration:none;border-radius:6px">Verify and share certificate</a></p><p>You can share this verification link on LinkedIn or add it to your Licenses &amp; Certifications profile section.</p><p>Automivex Learning</p></div>`;
+  try {
+    const delivery = await sendEmail(env, user.email, subject, text, html);
+    if (!delivery.delivered) {
+      await audit(env, { userId: user.id, type: "certificate_email_not_sent", entityType: "certificate", entityId: certificate.code, details: { adminId: actorId, development: !!delivery.development } });
+      return { sent: false, message: delivery.development ? "Certificate created, but development mode did not send email." : "Certificate created, but email was not sent." };
+    }
+    await audit(env, { userId: user.id, type: "certificate_email_sent", entityType: "certificate", entityId: certificate.code, details: { adminId: actorId, emailId: delivery.id } });
+    return { sent: true, message: "Certificate notification email sent." };
+  } catch (error) {
+    console.error("Certificate notification email failed", error?.message || error);
+    await audit(env, { userId: user.id, type: "certificate_email_failed", entityType: "certificate", entityId: certificate.code, details: { adminId: actorId, reason: String(error?.message || error).slice(0, 300) } });
+    return { sent: false, message: "Certificate created, but email delivery failed. An administrator can retry the email." };
+  }
+}
+async function issueCertificateForUser(user, request, env, actorId = null) {
+  const progress = await getProgress(user.id, env);
+  if (!progress.enrolled || progress.completedLessons < progress.totalLessons || !progress.quizPassed || !progress.project?.passed) {
+    return { issued: false, message: "Certificate is not ready: the learner must enroll, complete every lesson, pass the assessment, and submit a passing capstone." };
+  }
+  if (!hasSocialAttestations(progress.project.socialAttestations)) {
+    return { issued: false, message: "Certificate is not ready: all required social-account attestations must be recorded with the capstone." };
+  }
+  if (progress.project.humanReviewStatus !== "approved") {
+    return { issued: false, message: "Certificate is not ready: the capstone must be approved by an administrator." };
+  }
+  try {
+    const rechecked = await verifyGithubRepository(progress.project.githubUrl);
+    if (!rechecked.passed || rechecked.repositoryId !== progress.project.repositoryId ||
+        rechecked.commitSha !== progress.project.commitSha || rechecked.treeSha !== progress.project.treeSha) {
+      return { issued: false, message: "Certificate is not ready: the repository changed after review or no longer passes. The learner must resubmit the capstone." };
+    }
+  } catch (error) {
+    return { issued: false, message: `Certificate is not ready: ${error.message || "the repository could not be revalidated."}` };
+  }
+
+  let cert = await env.DB.prepare("SELECT certificate_code,recipient_name,course_title,issued_at FROM certificates WHERE user_id=? AND course_id=?").bind(user.id, COURSE_ID).first();
+  let created = false;
+  if (!cert) {
+    const code = `AVX-${new Date().getFullYear()}-${randomCode(8)}`;
+    const evidence = {
+      courseId: COURSE_ID,
+      courseVersion: "2026.1",
+      recipientName: user.fullName,
+      lessons: progress.completedLessons,
+      quizPassed: progress.quizPassed,
+      project: progress.project ? { repositoryId: progress.project.repositoryId, commitSha: progress.project.commitSha, treeSha: progress.project.treeSha, score: progress.project.score } : null,
+      issuedAt: new Date().toISOString(),
+      criteria: "Enrollment, all lesson knowledge checks, 80% final assessment, passed automated capstone checklist, learner self-attestation of required social account follows/subscription, and administrator approval"
+    };
+    const evidenceJson = JSON.stringify(evidence);
+    const signature = await hmacSha256(evidenceJson, env.SESSION_SECRET || "");
+    const insertion = await env.DB.prepare(`INSERT OR IGNORE INTO certificates(id,certificate_code,user_id,course_id,recipient_name,course_title,evidence_json,signature)
+      VALUES(?,?,?,?,?,?,?,?)`).bind(uuid(), code, user.id, COURSE_ID, user.fullName, COURSE.title, evidenceJson, signature).run();
+    created = insertion.meta?.changes === 1;
+    cert = await env.DB.prepare("SELECT certificate_code,recipient_name,course_title,issued_at FROM certificates WHERE user_id=? AND course_id=?").bind(user.id, COURSE_ID).first();
+    if (!cert) throw new Error("Certificate creation did not produce a readable certificate record.");
+    if (created) await audit(env, { userId: user.id, type: "certificate_issued", entityType: "certificate", entityId: cert.certificate_code, details: { courseId: COURSE_ID, courseVersion: "2026.1", adminId: actorId } });
+  }
+  const result = {
+    issued: true,
+    created,
+    code: cert.certificate_code,
+    recipientName: cert.recipient_name,
+    verifyUrl: `${appUrl(env, request)}/verify/${encodeURIComponent(cert.certificate_code)}`
+  };
+  if (created) result.email = await sendCertificateEmail(user, {
+    code: cert.certificate_code,
+    courseTitle: cert.course_title,
+    issuedAt: cert.issued_at
+  }, request, env, actorId);
+  return result;
 }
 async function getUser(request, env) {
   const token = cookieValue(request, "avx_session");
@@ -543,20 +625,20 @@ async function api(request, env) {
       if (!(await rateLimit(env, `otp-ip:${ip}`, 5, 3600))) return json({ error: "Too many sign-in requests. Try again in an hour." }, 429);
       const b = await bodyJson(request);
       const email = cleanEmail(b.email);
-      const fullName = String(b.fullName || "").trim().replace(/\s+/g, " ").slice(0, 100);
+      const intent = b.intent === "signup" ? "signup" : "signin";
+      const fullName = cleanDisplayName(b.fullName).slice(0, 100);
       if (!validEmail(email)) return json({ error: "Enter a valid email address." }, 400);
-      const existing = await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email).first();
-      if (!existing && fullName.length < 2) return json({ error: "Enter your name to create an account." }, 400);
-      if (!existing && b.acceptTerms !== true) return json({ error: "Accept the programme terms and privacy notice before creating an account." }, 400);
+      if (intent === "signup" && fullName.length < 1) return json({ error: "Enter the name you want shown on your learner account and certificate." }, 400);
+      if (intent === "signup" && b.acceptTerms !== true) return json({ error: "Accept the programme terms and privacy notice before creating an account." }, 400);
       if (!(await rateLimit(env, `otp-email:${email}`, 3, 3600))) return json({ error: "Too many codes requested for this email. Try again later." }, 429);
       const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
       const codeHash = await sha(`${email}:${code}:${env.SESSION_SECRET}`);
       const timestamp = now();
       await env.DB.prepare(`INSERT INTO email_codes(email,code_hash,full_name,marketing_opt_in,expires_at,sent_at,attempts)
         VALUES(?,?,?,?,?,?,0) ON CONFLICT(email) DO UPDATE SET code_hash=excluded.code_hash,full_name=excluded.full_name,marketing_opt_in=excluded.marketing_opt_in,expires_at=excluded.expires_at,sent_at=excluded.sent_at,attempts=0`)
-        .bind(email, codeHash, fullName || null, b.marketingOptIn ? 1 : 0, timestamp + 600, timestamp).run();
+        .bind(email, codeHash, intent === "signup" ? fullName : null, b.marketingOptIn ? 1 : 0, timestamp + 600, timestamp).run();
       const sent = await sendEmail(env, email, "Your Automivex sign-in code", `Your one-time code is ${code}. It expires in 10 minutes. If you did not request it, ignore this email.`, `<div style="font-family:Arial,sans-serif"><h2>Automivex sign-in</h2><p>Your one-time code is:</p><p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p><p>This code expires in 10 minutes. If you did not request it, ignore this email.</p></div>`);
-      const response = { ok: true, message: "A sign-in code has been sent if email delivery is configured." };
+      const response = { ok: true, message: "If email delivery is configured, a one-time code has been sent. Codes expire in 10 minutes; only your latest code works." };
       if (sent.development) response.debugCode = code;
       return json(response);
     }
@@ -574,9 +656,13 @@ async function api(request, env) {
         return json({ error: "Incorrect code. Check your email and try again." }, 400);
       }
       let user = await env.DB.prepare("SELECT id,full_name,email,role,marketing_opt_in FROM users WHERE email=?").bind(email).first();
+      if (!user && !row.full_name) {
+        await env.DB.prepare("DELETE FROM email_codes WHERE email=?").bind(email).run();
+        return json({ error: "No learner account was found for this email. Choose Create account to register." }, 404);
+      }
       const role = adminEmails(env).includes(email) ? "admin" : "student";
       if (!user) {
-        user = { id: uuid(), full_name: row.full_name || email.split("@")[0], email, role, marketing_opt_in: row.marketing_opt_in };
+        user = { id: uuid(), full_name: row.full_name, email, role, marketing_opt_in: row.marketing_opt_in };
         await env.DB.prepare(`INSERT INTO users(id,full_name,email,role,marketing_opt_in,terms_accepted_at,terms_version,privacy_version)
           VALUES(?,?,?,?,?,datetime('now'),'2026-11','2026-11')`).bind(user.id,user.full_name,email,role,row.marketing_opt_in).run();
       } else if (user.role !== "admin" && role === "admin") {
@@ -607,6 +693,20 @@ async function api(request, env) {
       if (!user) return json({ user: null });
       const progress = await getProgress(user.id, env);
       return json({ user, progress });
+    }
+
+    if (path === "/api/profile" && method === "PUT") {
+      const user = await requireUser(request, env);
+      const b = await bodyJson(request);
+      const fullName = cleanDisplayName(b.fullName);
+      if (fullName.length < 1 || fullName.length > 100 || /[\u0000-\u001f\u007f]/.test(fullName)) {
+        return json({ error: "Enter the name you want displayed, using 1 to 100 characters." }, 400);
+      }
+      const certificate = await env.DB.prepare("SELECT certificate_code FROM certificates WHERE user_id=? AND course_id=? LIMIT 1").bind(user.id,COURSE_ID).first();
+      if (certificate) return json({ error: "Your certificate name is locked after issuance. Contact support if the issued name needs correction." }, 409);
+      await env.DB.prepare("UPDATE users SET full_name=?,updated_at=datetime('now') WHERE id=?").bind(fullName,user.id).run();
+      const updatedUser = await getUser(request, env);
+      return json({ ok: true, user: updatedUser });
     }
 
     if (path === "/api/enroll" && method === "POST") {
@@ -775,41 +875,164 @@ async function api(request, env) {
       await env.DB.prepare("UPDATE project_submissions SET human_review_status=?,reviewer_id=?,review_notes=?,reviewed_at=datetime('now') WHERE id=?")
         .bind(status, admin.id, notes || null, submissionId).run();
       await audit(env, { userId: submission.user_id, type: "project_reviewed", entityType: "project_submission", entityId: submissionId, details: { status, reviewerId: admin.id, notesLength: notes.length } });
-      return json({ ok: true });
+      let certificate = null;
+      if (status === "approved") {
+        const learner = await env.DB.prepare("SELECT id,full_name,email FROM users WHERE id=?").bind(submission.user_id).first();
+        if (learner) {
+          try {
+            certificate = await issueCertificateForUser({ id: learner.id, fullName: learner.full_name, email: learner.email }, request, env, admin.id);
+          } catch (error) {
+            console.error("Certificate generation after capstone approval failed", error?.message || error);
+            certificate = { issued: false, message: "Capstone approval was saved, but certificate generation failed. Use Issue certificate to retry." };
+          }
+        } else {
+          certificate = { issued: false, message: "Capstone approval was saved, but the learner account could not be found." };
+        }
+      }
+      return json({ ok: true, certificate });
+    }
+
+    if (path === "/api/admin/certificate/issue" && method === "POST") {
+      const admin = await requireAdmin(request, env);
+      const b = await bodyJson(request);
+      const submissionId = String(b.submissionId || "").slice(0, 100);
+      const submission = await env.DB.prepare(`SELECT p.id,p.user_id,p.human_review_status,u.full_name,u.email
+        FROM project_submissions p JOIN users u ON u.id=p.user_id WHERE p.id=? AND p.course_id=?`)
+        .bind(submissionId, COURSE_ID).first();
+      if (!submission) return json({ error: "Capstone submission not found." }, 404);
+      if (submission.human_review_status !== "approved") return json({ error: "Approve the capstone before issuing its certificate." }, 409);
+      const certificate = await issueCertificateForUser({
+        id: submission.user_id,
+        fullName: submission.full_name,
+        email: submission.email
+      }, request, env, admin.id);
+      if (!certificate.issued) return json({ error: certificate.message }, 409);
+      return json({ ok: true, ...certificate });
+    }
+
+    if (path === "/api/admin/certificates/email" && method === "POST") {
+      const admin = await requireAdmin(request, env);
+      const b = await bodyJson(request);
+      const code = String(b.code || "").trim().slice(0, 100);
+      const certificate = await env.DB.prepare(`SELECT c.certificate_code,c.course_title,c.issued_at,c.revoked_at,c.recipient_name,c.evidence_json,c.signature,u.id AS user_id,u.full_name,u.email
+        FROM certificates c JOIN users u ON u.id=c.user_id WHERE c.certificate_code=?`).bind(code).first();
+      if (!certificate) return json({ error: "Certificate not found." }, 404);
+      if (certificate.revoked_at) return json({ error: "A revoked certificate email cannot be resent." }, 409);
+      let evidence;
+      try {
+        evidence = JSON.parse(certificate.evidence_json || "null");
+      } catch {
+        return json({ error: "The certificate evidence is invalid; its email cannot be resent." }, 409);
+      }
+      if (!certificate.signature || !evidence || typeof evidence !== "object" || Array.isArray(evidence) ||
+          (evidence.recipientName !== undefined && evidence.recipientName !== certificate.recipient_name) ||
+          await hmacSha256(certificate.evidence_json, env.SESSION_SECRET || "") !== certificate.signature) {
+        return json({ error: "The certificate signature is invalid; its email cannot be resent." }, 409);
+      }
+      const email = await sendCertificateEmail({
+        id: certificate.user_id,
+        fullName: certificate.full_name,
+        email: certificate.email
+      }, {
+        code: certificate.certificate_code,
+        courseTitle: certificate.course_title,
+        issuedAt: certificate.issued_at
+      }, request, env, admin.id);
+      if (!email.sent) return json({ error: email.message, emailSent: false }, 503);
+      return json({ ok: true, code, emailSent: true, message: email.message });
+    }
+
+    if (path === "/api/admin/certificates" && method === "GET") {
+      await requireAdmin(request, env);
+      const search = String(url.searchParams.get("q") || "").trim().slice(0, 254);
+      const pattern = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
+      const certificates = await env.DB.prepare(`SELECT c.certificate_code,c.recipient_name,c.course_title,c.issued_at,c.revoked_at,c.evidence_json,c.signature,u.full_name,u.email
+        FROM certificates c JOIN users u ON u.id=c.user_id
+        WHERE ?='' OR c.certificate_code LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR c.recipient_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR u.full_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR u.email LIKE ? ESCAPE '\\' COLLATE NOCASE
+        ORDER BY c.issued_at DESC LIMIT 100`).bind(search, pattern, pattern, pattern, pattern).all();
+      const listedCertificates = await Promise.all((certificates.results || []).map(async certificate => {
+        let evidence = null;
+        try { evidence = certificate.evidence_json ? JSON.parse(certificate.evidence_json) : null; }
+        catch { evidence = null; }
+        const validEvidence = !!evidence && typeof evidence === "object" && !Array.isArray(evidence);
+        const nameMatches = validEvidence && (evidence.recipientName === undefined || evidence.recipientName === certificate.recipient_name);
+        const integrityValid = validEvidence && !!certificate.signature && nameMatches &&
+          await hmacSha256(certificate.evidence_json, env.SESSION_SECRET || "") === certificate.signature;
+        return {
+          code: certificate.certificate_code,
+          recipientName: certificate.recipient_name,
+          courseTitle: certificate.course_title,
+          issuedAt: certificate.issued_at,
+          revoked: !!certificate.revoked_at,
+          corrected: !!evidence?.nameCorrection,
+          integrityValid,
+          learnerName: certificate.full_name,
+          email: certificate.email
+        };
+      }));
+      return json({ certificates: listedCertificates });
+    }
+
+    if (path === "/api/admin/certificates/name" && method === "POST") {
+      const admin = await requireAdmin(request, env);
+      const b = await bodyJson(request);
+      const code = String(b.code || "").trim().slice(0, 100);
+      const fullName = cleanDisplayName(b.fullName);
+      const reason = String(b.reason || "").trim().replace(/\s+/g, " ").slice(0, 500);
+      if (!code || fullName.length < 1 || fullName.length > 100 || /[\u0000-\u001f\u007f]/.test(fullName)) {
+        return json({ error: "Enter a valid certificate ID and recipient name (1 to 100 characters)." }, 400);
+      }
+      if (reason.length < 10) return json({ error: "Enter a correction reason of at least 10 characters." }, 400);
+      const certificate = await env.DB.prepare(`SELECT id,user_id,recipient_name,course_id,evidence_json,signature,revoked_at
+        FROM certificates WHERE certificate_code=?`).bind(code).first();
+      if (!certificate) return json({ error: "Certificate not found." }, 404);
+      if (certificate.revoked_at) return json({ error: "A revoked certificate cannot be corrected." }, 409);
+      if (certificate.recipient_name === fullName) return json({ error: "The certificate already has this recipient name." }, 400);
+      if (!certificate.evidence_json || !certificate.signature ||
+          await hmacSha256(certificate.evidence_json, env.SESSION_SECRET || "") !== certificate.signature) {
+        return json({ error: "The certificate signature is invalid. It cannot be corrected safely." }, 409);
+      }
+      let evidence;
+      try {
+        evidence = JSON.parse(certificate.evidence_json);
+      } catch {
+        return json({ error: "The certificate evidence is invalid. It cannot be corrected safely." }, 409);
+      }
+      if (!evidence || typeof evidence !== "object" || Array.isArray(evidence) ||
+          (evidence.recipientName !== undefined && evidence.recipientName !== certificate.recipient_name)) {
+        return json({ error: "The signed recipient name does not match this certificate. It cannot be corrected safely." }, 409);
+      }
+      const previousName = certificate.recipient_name;
+      const revision = Number(evidence.nameCorrection?.revision || 0) + 1;
+      evidence.recipientName = fullName;
+      evidence.nameCorrection = { revision, correctedAt: new Date().toISOString() };
+      const evidenceJson = JSON.stringify(evidence);
+      const signature = await hmacSha256(evidenceJson, env.SESSION_SECRET || "");
+      const auditId = uuid();
+      const details = JSON.stringify({ adminId: admin.id, previousName, correctedName: fullName, reason, revision });
+      const results = await env.DB.batch([
+        env.DB.prepare(`UPDATE certificates SET recipient_name=?,evidence_json=?,signature=?
+          WHERE certificate_code=? AND recipient_name=? AND signature=? AND revoked_at IS NULL`)
+          .bind(fullName, evidenceJson, signature, code, previousName, certificate.signature),
+        env.DB.prepare(`INSERT INTO audit_events(id,user_id,event_type,entity_type,entity_id,course_id,details_json)
+          SELECT ?,?,'certificate_name_corrected','certificate',?,?,?
+          WHERE changes()=1 AND EXISTS(SELECT 1 FROM certificates WHERE certificate_code=? AND recipient_name=? AND signature=?)`)
+          .bind(auditId, certificate.user_id, code, certificate.course_id, details, code, fullName, signature)
+      ]);
+      if (results[0]?.meta?.changes !== 1 || results[1]?.meta?.changes !== 1) {
+        return json({ error: "The certificate changed while this correction was being saved. Reload and try again." }, 409);
+      }
+      return json({ ok: true, code, recipientName: fullName, corrected: true, revision });
     }
 
     if (path === "/api/certificate/issue" && method === "POST") {
       const user = await requireUser(request, env);
-      const p = await getProgress(user.id, env);
-      if (!p.enrolled || p.completedLessons < p.totalLessons || !p.quizPassed || !p.project?.passed) return json({ error: "Complete all lessons, pass the assessment and meet the capstone submission checklist before issuing a certificate." }, 400);
-      if (!hasSocialAttestations(p.project.socialAttestations)) return json({ error: "Confirm all required social-account follows and subscriptions with a new capstone submission before certificate issuance." }, 400);
-      if (p.project.humanReviewStatus !== "approved") return json({ error: "Your capstone must be approved by an administrator before certificate issuance." }, 403);
-      try {
-        const rechecked = await verifyGithubRepository(p.project.githubUrl);
-        if (!rechecked.passed || rechecked.repositoryId !== p.project.repositoryId || rechecked.commitSha !== p.project.commitSha || rechecked.treeSha !== p.project.treeSha) {
-          return json({ error: "The repository changed after submission or no longer passes the checklist. Resubmit your capstone for review." }, 409);
-        }
-      } catch (err) {
-        return json({ error: err.message || "The repository could not be revalidated." }, 409);
-      }
-      let cert = await env.DB.prepare("SELECT certificate_code FROM certificates WHERE user_id=? AND course_id=?").bind(user.id,COURSE_ID).first();
-      if (!cert) {
-        const code = `AVX-${new Date().getFullYear()}-${randomCode(8)}`;
-        const evidence = {
-          courseId: COURSE_ID,
-          courseVersion: "2026.1",
-          lessons: p.completedLessons,
-          quizPassed: p.quizPassed,
-          project: p.project ? { repositoryId: p.project.repositoryId, commitSha: p.project.commitSha, treeSha: p.project.treeSha, score: p.project.score } : null,
-          issuedAt: new Date().toISOString(),
-          criteria: "Enrollment, all lesson knowledge checks, 80% final assessment, passed automated capstone checklist, learner self-attestation of required social account follows/subscription, and administrator approval"
-        };
-        const signature = await hmacSha256(JSON.stringify(evidence), env.SESSION_SECRET || "");
-        await env.DB.prepare("INSERT INTO certificates(id,certificate_code,user_id,course_id,recipient_name,course_title,evidence_json,signature) VALUES(?,?,?,?,?,?,?,?)").bind(uuid(),code,user.id,COURSE_ID,user.fullName,COURSE.title,JSON.stringify(evidence),signature).run();
-        cert = { certificate_code: code };
-        await audit(env, { userId: user.id, type: "certificate_issued", entityType: "certificate", entityId: code, details: { courseId: COURSE_ID, courseVersion: "2026.1" } });
-      }
-      return json({ ok: true, code: cert.certificate_code, verifyUrl: `${appUrl(env,request)}/verify/${cert.certificate_code}` });
+      const certificate = await issueCertificateForUser(user, request, env);
+      if (!certificate.issued) return json({ error: certificate.message }, 409);
+      return json({ ok: true, ...certificate });
     }
 
     if (path.startsWith("/api/certificates/") && method === "GET") {
@@ -817,11 +1040,15 @@ async function api(request, env) {
       const cert = await env.DB.prepare(`SELECT c.certificate_code,c.recipient_name,c.course_title,c.issued_at,c.revoked_at,c.evidence_json,c.signature,u.full_name,u.email
         FROM certificates c JOIN users u ON u.id=c.user_id WHERE c.certificate_code=?`).bind(code).first();
       if (!cert) return json({ valid: false }, 404);
+      let evidence = null;
+      try { evidence = cert.evidence_json ? JSON.parse(cert.evidence_json) : null; }
+      catch { evidence = null; }
       let signatureValid = false;
-      if (cert.evidence_json && cert.signature) {
-        signatureValid = await hmacSha256(cert.evidence_json, env.SESSION_SECRET || "") === cert.signature;
+      if (cert.evidence_json && cert.signature && evidence && typeof evidence === "object" && !Array.isArray(evidence)) {
+        const signedNameMatches = evidence.recipientName === undefined || evidence.recipientName === cert.recipient_name;
+        signatureValid = signedNameMatches && await hmacSha256(cert.evidence_json, env.SESSION_SECRET || "") === cert.signature;
       }
-      return json({ valid: !cert.revoked_at && signatureValid, code: cert.certificate_code, recipientName: cert.recipient_name, courseTitle: cert.course_title, issuedAt: cert.issued_at, issuer: "Automivex", status: cert.revoked_at ? "revoked" : signatureValid ? "valid" : "invalid_signature", evidence: cert.evidence_json ? JSON.parse(cert.evidence_json) : null });
+      return json({ valid: !cert.revoked_at && signatureValid, code: cert.certificate_code, recipientName: cert.recipient_name, courseTitle: cert.course_title, issuedAt: cert.issued_at, issuer: "Automivex", status: cert.revoked_at ? "revoked" : signatureValid ? "valid" : "invalid_signature", evidence });
     }
 
     if (path === "/api/admin/overview" && method === "GET") {
@@ -847,16 +1074,29 @@ async function verificationPageThemed(request, env) {
   const code = new URL(request.url).pathname.split("/").pop();
   const cert = await env.DB.prepare(`SELECT certificate_code,recipient_name,course_title,issued_at,revoked_at,evidence_json,signature
     FROM certificates WHERE certificate_code=?`).bind(code).first();
-  const head = `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090d16"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><script src="/theme.js"></script><link rel="stylesheet" href="/styles.css"><title>Certificate verification | Automivex</title></head>`;
-  if (!cert) return html(`<!doctype html><html lang="en">${head}<body><main class="verification-page"><div class="verification-container"><button class="theme-toggle verification-theme" type="button" aria-label="Switch theme" title="Switch theme">Switch theme</button><section class="verification-card"><div class="eyebrow">AUTOMIVEX VERIFICATION</div><h1>Certificate not found</h1><p>This certificate ID could not be verified.</p><a class="btn outline" href="/">Return to Automivex</a></section></div></main></body></html>`,404);
-  const signatureValid = cert.evidence_json && cert.signature
-    ? await hmacSha256(cert.evidence_json, env.SESSION_SECRET || "") === cert.signature
-    : false;
+  const head = (title, description, canonical) => `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090d16"><meta property="og:type" content="website"><meta property="og:site_name" content="Automivex Learning"><meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:url" content="${escapeHtml(canonical)}"><meta name="twitter:card" content="summary"><link rel="canonical" href="${escapeHtml(canonical)}"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><script src="/theme.js"></script><link rel="stylesheet" href="/styles.css"><title>${escapeHtml(title)}</title></head>`;
+  if (!cert) {
+    const notFoundUrl = `${appUrl(env, request)}/verify/${encodeURIComponent(code)}`;
+    return html(`<!doctype html><html lang="en">${head("Certificate not found","This certificate ID could not be verified.",notFoundUrl)}<body><main class="verification-page"><div class="verification-container"><button class="theme-toggle verification-theme" type="button" aria-label="Switch theme" title="Switch theme">Switch theme</button><section class="verification-card"><div class="eyebrow">AUTOMIVEX VERIFICATION</div><h1>Certificate not found</h1><p>This certificate ID could not be verified.</p><a class="btn outline" href="/">Return to Automivex</a></section></div></main></body></html>`,404);
+  }
+  const verifyUrl = `${appUrl(env, request)}/verify/${encodeURIComponent(cert.certificate_code)}`;
+  let evidence = null;
+  try { evidence = cert.evidence_json ? JSON.parse(cert.evidence_json) : null; }
+  catch { evidence = null; }
+  const validEvidence = !!evidence && typeof evidence === "object" && !Array.isArray(evidence);
+  const signedNameMatches = validEvidence && (evidence.recipientName === undefined || evidence.recipientName === cert.recipient_name);
+  const signatureValid = !!cert.evidence_json && !!cert.signature && signedNameMatches &&
+    await hmacSha256(cert.evidence_json, env.SESSION_SECRET || "") === cert.signature;
   const valid = !cert.revoked_at && signatureValid;
   const date = new Date(cert.issued_at.replace(" ","T")+"Z").toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"});
   const status = valid ? "VALID CERTIFICATE" : cert.revoked_at ? "REVOKED CERTIFICATE" : "INVALID SIGNATURE";
   const statusClass = valid ? "valid" : "invalid";
-  return html(`<!doctype html><html lang="en">${head}<body><main class="verification-page"><div class="verification-container"><button class="theme-toggle verification-theme" type="button" aria-label="Switch theme" title="Switch theme">Switch theme</button><section class="verification-card"><div class="eyebrow">AUTOMIVEX VERIFICATION</div><h1>Certificate verification</h1><span class="verification-status ${statusClass}">${status}</span><p class="verification-intro">This confirms that</p><h2>${escapeHtml(cert.recipient_name)}</h2><p>completed the practical learning programme</p><h3>${escapeHtml(cert.course_title)}</h3><p class="verification-date">Issued ${escapeHtml(date)}</p><hr><p class="verification-id-label">CERTIFICATE ID</p><strong class="verification-id">${escapeHtml(cert.certificate_code)}</strong><p class="verification-home"><a href="/">Automivex learning</a></p><p class="verification-disclaimer">This is a course-completion credential recording milestone requirements and repository checks, not an accredited qualification.</p></section></div></main></body></html>`);
+  const title = `${cert.recipient_name} — ${cert.course_title} certificate`;
+  const description = valid
+    ? `Verify ${cert.recipient_name}'s Automivex certificate for ${cert.course_title}. Certificate ID ${cert.certificate_code}.`
+    : `Automivex certificate status: ${status.toLowerCase()}. Certificate ID ${cert.certificate_code}.`;
+  const shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(verifyUrl)}`;
+  return html(`<!doctype html><html lang="en">${head(title, description, verifyUrl)}<body><main class="verification-page"><div class="verification-container"><button class="theme-toggle verification-theme" type="button" aria-label="Switch theme" title="Switch theme">Switch theme</button><section class="verification-card"><div class="eyebrow">AUTOMIVEX VERIFICATION</div><h1>Certificate verification</h1><span class="verification-status ${statusClass}">${status}</span><p class="verification-intro">This confirms that</p><h2>${escapeHtml(cert.recipient_name)}</h2><p>completed the practical learning programme</p><h3>${escapeHtml(cert.course_title)}</h3><p class="verification-date">Issued ${escapeHtml(date)}</p><hr><p class="verification-id-label">CERTIFICATE ID</p><strong class="verification-id">${escapeHtml(cert.certificate_code)}</strong>${valid?`<div class="verification-share-actions"><a class="btn primary" href="${escapeHtml(shareUrl)}" target="_blank" rel="noopener noreferrer">Share on LinkedIn</a><button class="btn outline" type="button" data-copy-link="${escapeHtml(verifyUrl)}">Copy verification link</button></div><p class="verification-copy-status" data-copy-status role="status" aria-live="polite"></p>${evidence?.nameCorrection?`<p class="verification-correction-note">Recipient-name correction recorded by the issuer (revision ${Number(evidence.nameCorrection.revision)||1}).</p>`:""}`:""}<p class="verification-home"><a href="/">Automivex learning</a></p><p class="verification-disclaimer">This is a course-completion credential recording milestone requirements and repository checks, not an accredited qualification.</p></section></div><script src="/verify.js" defer></script></main></body></html>`);
 }
 
 export default {

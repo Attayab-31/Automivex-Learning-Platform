@@ -1,6 +1,6 @@
 const app = document.querySelector("#app");
 const toastEl = document.querySelector("#toast");
-const state = { user: null, progress: null, course: null, config: { links: {} }, view: "home", authEmail: "", debugCode: null, quiz: null, quizNonce: null, quizIntegrity: null, lastQuizResult: null, admin: null, adminError: null };
+const state = { user: null, progress: null, course: null, config: { links: {} }, view: "home", authMode: "signin", authEmail: "", authCodeSent: false, authFullName: "", authTermsAccepted: false, debugCode: null, quiz: null, quizNonce: null, quizIntegrity: null, lastQuizResult: null, admin: null, adminError: null, certificateSearch: "" };
 let assessmentIntegrityListenersReady = false;
 const SOCIAL_REQUIREMENTS = [
   { key:"linkedin", label:"LinkedIn", action:"follow" },
@@ -38,7 +38,7 @@ function beginButtonLoading(button, label="Loading…") {
   button.classList.add("is-loading");
   button.setAttribute("aria-busy", "true");
   button.setAttribute("aria-label", label);
-  button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span>${esc(label)}</span>`;
+  button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span class="btn-loading-label">${esc(label)}</span>`;
   return () => {
     if (!button.isConnected) return;
     button.innerHTML = original.content;
@@ -56,6 +56,8 @@ function buttonLoadingLabel(action) {
     enroll: "Enrolling…",
     quiz: "Loading assessment…",
     "issue-certificate": "Issuing certificate…",
+    "admin-issue-certificate": "Issuing certificate…",
+    "admin-resend-certificate": "Sending email…",
     logout: "Signing out…"
   })[action] || "Loading…";
 }
@@ -113,7 +115,13 @@ app = FastAPI(
     }</code></pre><div class="code-status"><span></span> Ready for your first API · GET /health 200 OK</div></div></div></div></section><section class="trust-strip"><div class="container trust-inner"><span>AN INITIATIVE BY</span><strong>AUTOMIVEX</strong><i></i><span>PYTHON</span><i></i><span>BACKEND ENGINEERING</span><i></i><span>PORTFOLIO PROJECTS</span><i></i><span>FREE CERTIFICATE</span></div></section><section class="section" id="program"><div class="container"><div class="section-heading"><div><div class="eyebrow">THE LEARNING PROGRAMME</div><h2>One focused path.<br><span>Practical outcomes.</span></h2></div><p>Start with a carefully structured Python API learning path, then demonstrate your learning through a capstone built independently.</p></div><div class="program-grid">${courseCard()}<div class="programme-info"><div class="info-block"><span class="info-number">01</span><div><h3>Study the fundamentals</h3><p>Follow a free, publicly available course and use our milestones to organise your learning.</p></div></div><div class="info-block"><span class="info-number">02</span><div><h3>Check your understanding</h3><p>Complete short quizzes and knowledge checks as you move through the modules.</p></div></div><div class="info-block"><span class="info-number">03</span><div><h3>Build independently</h3><p>Develop a practical backend project and submit your public repository for structural checks.</p></div></div><div class="info-block"><span class="info-number">04</span><div><h3>Verify your completion</h3><p>Meet the published criteria to generate a certificate with a public verification page.</p></div></div>${btn("Create your free learning account","auth","btn primary full")}</div></div></div></section><section class="section dark-section" id="capstone"><div class="container capstone-grid"><div><div class="eyebrow light">THE FINAL PROJECT</div><h2>Build a product,<br><span>not just a tutorial clone.</span></h2><p class="dark-lead">Your capstone is a multi-tenant customer support SaaS API: a backend system where different organisations manage agents, support tickets, comments and knowledge articles while keeping their data isolated.</p><div class="capstone-tags"><span>FastAPI</span><span>PostgreSQL</span><span>SQLAlchemy 2.x</span><span>JWT</span><span>Pytest</span><span>Docker</span><span>GitHub Actions</span></div>${btn("Explore project requirements","capstone-details","btn light-btn")}</div><div class="architecture-card"><div class="arch-label">REFERENCE ARCHITECTURE</div><div class="arch-node main-node"><b>Client applications</b><small>Web / API clients</small></div><div class="arch-connector">↓</div><div class="arch-node api-node"><b>FastAPI application</b><small>Authentication · Validation · RBAC</small></div><div class="arch-connector">↓</div><div class="arch-row"><div class="arch-node"><b>Workspace</b><small>Tenant isolation</small></div><div class="arch-node"><b>Ticket service</b><small>Workflow & comments</small></div></div><div class="arch-connector">↓</div><div class="arch-node db-node"><b>PostgreSQL</b><small>Users · Tickets · Audit logs · Knowledge base</small></div><div class="arch-foot"><span>✓ Automated tests</span><span>✓ CI pipeline</span></div></div></div></section><section class="section"><div class="container"><div class="section-heading"><div><div class="eyebrow">HOW IT WORKS</div><h2>A clear path from<br><span>learning to evidence.</span></h2></div><p>There are no hidden steps. Requirements are published before you begin, and certificates require course progress, assessment results, a passing repository checklist, social-account self-attestations and administrator approval.</p></div><div class="steps-grid"><div class="step-card"><span>01</span><h3>Register</h3><p>Create your learner account using an email verification code.</p></div><div class="step-card"><span>02</span><h3>Learn</h3><p>Use the free course and mark each learning milestone when completed.</p></div><div class="step-card"><span>03</span><h3>Assess</h3><p>Pass the knowledge assessment and build your independent capstone.</p></div><div class="step-card"><span>04</span><h3>Demonstrate</h3><p>Submit your public GitHub repository and required social-account self-attestations for the automated checklist, then wait for an administrator review.</p></div><div class="step-card"><span>05</span><h3>Receive</h3><p>Issue and share your completion certificate with a verifiable ID.</p></div></div></div></section><section class="section faq-section"><div class="container faq-grid"><div><div class="eyebrow">GOOD TO KNOW</div><h2>Clear expectations.<br><span>No surprises.</span></h2><p>Read the programme rules before registering. The learning initiative is educational and does not create an employment or internship relationship.</p></div><div class="faq-list"><details><summary>Is the programme really free?</summary><p>Yes. There is no application, tuition, assessment or certificate fee. You need your own computer and internet connection. Third-party platforms such as GitHub and email providers have their own terms and limits.</p></details><details><summary>Is this an internship or job?</summary><p>No. This is an independent educational learning initiative. It does not offer employment, an internship, paid work or guaranteed recruitment.</p></details><details><summary>Will I get a certificate automatically?</summary><p>Only after the published requirements are met: course milestones, a passing knowledge assessment, a passing capstone checklist, social-account self-attestations and administrator approval. The certificate confirms course completion; it is not an accredited qualification or a substitute for a professional code review.</p></details><details><summary>Do I need to follow Automivex on social media?</summary><p>To submit your capstone and qualify for a certificate, confirm that you followed Automivex on LinkedIn and TikTok and subscribed on YouTube. These confirmations are self-attested and not independently verified. Joining WhatsApp is optional.</p></details><details><summary>Do I need to pay for hosting or an AI API?</summary><p>No paid AI API is required. The capstone can be built with open-source Python tools and local development services. Optional deployment providers may impose their own free-tier restrictions.</p></details><details><summary>Who owns my capstone?</summary><p>You retain ownership of your original project. By submitting a public GitHub repository, you allow the platform to inspect its public file structure for the stated assessment checklist. Automivex does not receive ownership of your code.</p></details></div></div></section><section class="cta-section"><div class="container cta-inner"><div><div class="eyebrow light">START BUILDING</div><h2>Your next project<br>starts here.</h2><p>Learn the fundamentals, apply them independently and create something you can show.</p></div><div class="cta-actions">${btn("Create free account","auth","btn light-btn large")}<a class="btn outline large" href="${esc(state.config.links?.linkedin||'https://www.linkedin.com/company/automivex/')}" target="_blank" rel="noopener">Follow Automivex on LinkedIn ↗</a></div></div></section></main>${footer()}`;
 }
 function authView() {
-  return `${header()}<main class="auth-wrap"><div class="auth-card"><div class="auth-side"><div class="eyebrow light">AUTOMIVEX LEARNING</div><h2>Start building<br>your next skill.</h2><p>One account for learning milestones, assessments, project submissions and certificates.</p><div class="auth-side-note">No fee. No social-follow requirement. No employment promise.</div></div><div class="auth-form-side"><button class="back-link" data-action="home">← Back to website</button><div class="eyebrow">LEARNER ACCOUNT</div><h1>${state.authEmail ? "Check your inbox" : "Welcome to Automivex"}</h1><p class="muted">${state.authEmail ? `We sent a six-digit sign-in code to ${esc(state.authEmail)}.` : "Sign in or create an account using your email address."}</p>${state.authEmail ? `<form id="verify-form" class="form"><label>Six-digit verification code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="000000" autocomplete="one-time-code"></label>${state.debugCode ? `<div class="dev-code">Local development code: <b>${esc(state.debugCode)}</b></div>` : ""}<button class="btn primary full" type="submit">Verify and continue</button><button class="btn ghost full" type="button" data-action="change-email">Use a different email</button></form>` : `<form id="start-form" class="form"><label>Your name<input name="fullName" minlength="2" maxlength="100" required placeholder="Your full name"></label><label>Email address<input type="email" name="email" required maxlength="254" placeholder="you@example.com"></label><label class="check-label"><input type="checkbox" name="acceptTerms" required><span>I have read and accept the <a href="/terms.html" target="_blank">programme terms</a> and <a href="/privacy.html" target="_blank">privacy notice</a>.</span></label><button class="btn primary full" type="submit">Send sign-in code</button></form>`}<div class="auth-foot">Your email is used for account access and essential programme messages. We do not sell learner information.</div></div></div></main>${footer()}`;
+  const isSignup=state.authMode==="signup";
+  const email=esc(state.authEmail);
+  const name=esc(state.authFullName);
+  const authContent=state.authCodeSent
+    ? `<div class="auth-code-intro"><span class="auth-code-icon" aria-hidden="true">✉</span><p class="muted">Enter the six-digit code sent to <b>${email}</b>. It expires in 10 minutes and only the newest code can be used.</p></div><form id="verify-form" class="form"><label>Verification code<input name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000" autocomplete="one-time-code" autofocus></label>${state.debugCode?`<div class="dev-code">Local development code: <b>${esc(state.debugCode)}</b></div>`:""}<button class="btn primary full" type="submit">Verify email and continue</button><button class="btn ghost full" type="button" data-action="resend-code">Resend code</button><button class="btn ghost full" type="button" data-action="change-email">Use a different email</button>${!isSignup?`<button class="auth-switch-link" type="button" data-action="switch-signup">New to Automivex? Create an account</button>`:""}</form>`
+    : `<div class="auth-mode-toggle" role="group" aria-label="Choose account action"><button type="button" data-action="auth-mode" data-mode="signin" aria-pressed="${!isSignup}">Sign in</button><button type="button" data-action="auth-mode" data-mode="signup" aria-pressed="${isSignup}">Create account</button></div><div class="auth-mode-copy">${isSignup?"Enter your name as you want it displayed on a future certificate. You can update it before the certificate is issued. If you already have an account, sign in instead.":"Use the email address you registered with. We’ll send a one-time sign-in code."}</div><form id="start-form" class="form" data-auth-mode="${isSignup?"signup":"signin"}">${isSignup?`<label>Name for your learner profile and certificate<input name="fullName" value="${name}" minlength="1" maxlength="100" required autocomplete="name" placeholder="Name as you want it printed"></label>`:""}<label>Email address<input type="email" name="email" value="${email}" required maxlength="254" placeholder="you@example.com" autocomplete="email"></label>${isSignup?`<label class="check-label"><input type="checkbox" name="acceptTerms" required><span>I have read and accept the <a href="/terms.html" target="_blank" rel="noopener">programme terms</a> and <a href="/privacy.html" target="_blank" rel="noopener">privacy notice</a>.</span></label>`:""}<button class="btn primary full" type="submit">${isSignup?"Create account and send code":"Send sign-in code"}</button></form>`;
+  return `${header()}<main class="auth-wrap"><div class="auth-card"><div class="auth-side"><div class="eyebrow light">AUTOMIVEX LEARNING</div><h2>Learn at your pace.<br>Earn on your work.</h2><p>One secure account for learning milestones, assessments, capstone submissions, and your certificate.</p><div class="auth-side-note">No password to remember · Email verification required</div></div><div class="auth-form-side"><button class="back-link" data-action="home">← Back to website</button><div class="eyebrow">LEARNER ACCOUNT</div><h1>${state.authCodeSent?"Check your inbox":isSignup?"Create your account":"Welcome back"}</h1>${authContent}<div class="auth-foot">Your email is verified by a one-time code. Never share that code with anyone. Your certificate uses the name in your profile when it is issued.</div></div></div></main>${footer()}`;
 }
 function videoTimeText(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -403,10 +411,14 @@ function assessmentView() {
 function certificatesView() {
   const p = state.progress || { certificate:null, project:null, quizPassed:false, completedLessons:0, totalLessons:10 };
   const cert = p.certificate;
+  const verificationUrl=cert?`${location.origin}/verify/${encodeURIComponent(cert.code)}`:"";
+  const linkedinShareUrl=cert?`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(verificationUrl)}`:"";
   const project = p.project;
   const reviewApproved = project?.humanReviewStatus === "approved";
   const reviewText = !project?.passed ? "Passing repository check required" : reviewApproved ? "Approved" : project.humanReviewStatus === "rejected" ? "Changes requested" : "Administrator review pending";
   const socialDone = SOCIAL_REQUIREMENTS.every(({key}) => project?.socialAttestations?.[key] === true);
+  const readyToIssue = p.enrolled && p.completedLessons >= p.totalLessons && p.quizPassed &&
+    !!project?.passed && socialDone && reviewApproved;
   const steps = [
     { done:p.completedLessons===p.totalLessons, title:"Learning milestones", detail:`${p.completedLessons||0}/${p.totalLessons||10} completed` },
     { done:!!p.quizPassed, title:"Final assessment", detail:p.quizPassed?"Passed":"80% required" },
@@ -414,7 +426,24 @@ function certificatesView() {
     { done:!!project?.passed, title:"Capstone checklist", detail:project?.passed?`Passed · ${project.score}/7`:"Repository submission required" },
     { done:reviewApproved, title:"Admin review", detail:reviewApproved?"Approved":project?.humanReviewStatus==="rejected"?"Changes requested":"Review pending" }
   ];
-  return `${header()}<main class="workspace-main"><div class="workspace-shell"><aside>${workspaceNav("certificates")}<div class="workspace-course-summary"><small>ACHIEVEMENTS</small><b>Certificate centre</b><span>${cert?"1 certificate issued":"No certificate yet"}</span></div></aside><section class="workspace-content"><div class="workspace-page-heading"><div><div class="eyebrow">CERTIFICATE CENTRE</div><h1>Your certificates</h1><p>Review completion eligibility and access your verifiable course credential.</p></div></div>${cert?`<article class="certificate-feature"><div class="certificate-mini-preview"><div class="mini-kicker">AUTOMIVEX</div><div class="mini-seal">A</div><small>CERTIFICATE OF COMPLETION</small><b>${esc(cert.recipientName||state.user.fullName)}</b><span>Python API Development</span></div><div class="certificate-feature-details"><span class="status-pill good">Verified certificate</span><h2>Python API Development</h2><p><small>Certificate ID</small><b>${esc(cert.code)}</b></p><p><small>Issued</small><b>${new Date(cert.issuedAt.replace(" ","T")+"Z").toLocaleDateString()}</b></p><div class="certificate-feature-actions"><a class="btn primary" href="/certificate.html?code=${encodeURIComponent(cert.code)}">View & print certificate</a><a class="btn outline" href="/verify/${encodeURIComponent(cert.code)}">Open verification page ↗</a></div></div></article>`:`<section class="certificate-empty"><div class="certificate-progress-art"><div class="progress-disc">${pct(p.completedLessons,p.totalLessons)}%</div></div><div><span class="status-pill">Not yet issued</span><h2>Complete the programme to earn your certificate</h2><p class="panel-intro">The certificate unlocks after all five requirements below are complete, including administrator approval of a passing capstone.</p><div class="certificate-steps">${steps.map((step,index)=>`<div class="${step.done?"complete":""}"><span>${step.done?"✓":String(index+1)}</span><b>${step.title}</b><small>${esc(step.detail)}</small></div>`).join("")}</div>${project?.reviewNotes?`<div class="notice"><b>Review feedback</b><p>${esc(project.reviewNotes)}</p></div>`:""}<div class="certificate-empty-actions">${btn(p.completedLessons<p.totalLessons?"Continue learning":!p.quizPassed?"Start assessment":"Open capstone",p.completedLessons<p.totalLessons?"learning":!p.quizPassed?"quiz":"capstone","btn primary")}${btn("View programme requirements","capstone-details","btn outline")}</div></div></section>`}</section></div></main>${footer()}`;
+  return `${header()}<main class="workspace-main"><div class="workspace-shell"><aside>${workspaceNav("certificates")}<div class="workspace-course-summary"><small>ACHIEVEMENTS</small><b>Certificate centre</b><span>${cert?"1 certificate issued":"No certificate yet"}</span></div></aside><section class="workspace-content"><div class="workspace-page-heading"><div><div class="eyebrow">CERTIFICATE CENTRE</div><h1>Your certificates</h1><p>Review completion eligibility and access your verifiable course credential.</p></div></div>${cert?`<article class="certificate-feature"><div class="certificate-mini-preview"><div class="mini-kicker">AUTOMIVEX</div><div class="mini-seal">A</div><small>CERTIFICATE OF COMPLETION</small><b>${esc(cert.recipientName||state.user.fullName)}</b><span>Python API Development</span></div><div class="certificate-feature-details"><span class="status-pill good">Certificate issued</span><h2>Python API Development</h2><p><small>Certificate ID</small><b>${esc(cert.code)}</b></p><p><small>Issued</small><b>${new Date(cert.issuedAt.replace(" ","T")+"Z").toLocaleDateString()}</b></p><div class="certificate-feature-actions"><a class="btn primary" href="/certificate.html?code=${encodeURIComponent(cert.code)}">View & print certificate</a><a class="btn outline" href="${esc(verificationUrl)}">Verify certificate</a><a class="btn outline" href="${esc(linkedinShareUrl)}" target="_blank" rel="noopener noreferrer">Share on LinkedIn</a><button class="btn ghost" type="button" data-action="copy-certificate-link" data-url="${esc(verificationUrl)}">Copy verification link</button></div><details class="certificate-linkedin-guide"><summary>Add the certificate to your LinkedIn profile</summary><ol><li>Open your LinkedIn profile and choose <b>Add profile section</b> → <b>Recommended</b> → <b>Add licenses & certifications</b>.</li><li>Enter Automivex as the issuing organization, the certificate title and issue date shown above.</li><li>Use <b>${esc(cert.code)}</b> as the credential ID and paste the verification link as the credential URL.</li><li>Save the entry. The verification link lets viewers check the current issuer status.</li></ol></details></div></article>`:`<section class="certificate-empty"><div class="certificate-progress-art"><div class="progress-disc">${pct(p.completedLessons,p.totalLessons)}%</div></div><div><span class="status-pill">${reviewApproved?"Capstone approved": "Not yet issued"}</span><h2>${reviewApproved?"Your capstone is approved": "Complete the programme to earn your certificate"}</h2><p class="panel-intro">${reviewApproved?"Your certificate is generated after all course requirements are met. If your account was open during approval, reload this page to refresh your certificate status.":"The certificate unlocks after all five requirements below are complete, including administrator approval of a passing capstone."}</p><div class="certificate-steps">${steps.map((step,index)=>`<div class="${step.done?"complete":""}"><span>${step.done?"✓":String(index+1)}</span><b>${step.title}</b><small>${esc(step.detail)}</small></div>`).join("")}</div>${project?.reviewNotes?`<div class="notice"><b>Review feedback</b><p>${esc(project.reviewNotes)}</p></div>`:""}<div class="certificate-empty-actions">${readyToIssue?`<button class="btn primary" type="button" data-action="issue-certificate">Issue my certificate</button>`:btn(p.completedLessons<p.totalLessons?"Continue learning":!p.quizPassed?"Start assessment":"Open capstone",p.completedLessons<p.totalLessons?"learning":!p.quizPassed?"quiz":"capstone","btn primary")}${btn("View programme requirements","capstone-details","btn outline")}</div></div></section>`}</section></div></main>${footer()}`;
+}
+function profileView() {
+  const certificate=state.progress?.certificate;
+  const profileName=certificate?.recipientName||state.user.fullName;
+  return `${header()}<main class="workspace-main"><div class="workspace-shell"><aside>${workspaceNav("profile")}<div class="workspace-course-summary"><small>ACCOUNT</small><b>Learner profile</b><span>${esc(state.user.email)}</span></div></aside><section class="workspace-content">
+    <div class="workspace-page-heading"><div><div class="eyebrow">ACCOUNT SETTINGS</div><h1>Profile and certificate name</h1><p>Keep your account details accurate and choose how your name should appear on your completion certificate.</p></div></div>
+    <section class="profile-settings-card panel">
+      <form id="profile-form" class="form">
+        <label>Name for your learner profile and certificate<input name="fullName" type="text" minlength="1" maxlength="100" required autocomplete="name" value="${esc(profileName)}" ${certificate?"disabled":""} aria-describedby="profile-name-help"></label>
+        <small id="profile-name-help" class="profile-field-help">${certificate?"A certificate has already been issued. Its recipient name is preserved as part of the credential.":"Use the name and spelling you want printed. We do not independently verify identity; this is the name you provide in your profile."}</small>
+        <label>Sign-in email<input type="email" value="${esc(state.user.email)}" readonly aria-describedby="profile-email-help"></label>
+        <small id="profile-email-help" class="profile-field-help">Your email was verified with a one-time code and is used to sign in. To change it, contact <a href="mailto:support@automivex.com?subject=Learning%20account%20email%20change">support@automivex.com</a>.</small>
+        ${certificate?`<div class="notice profile-certificate-lock"><b>Issued certificate name</b><p>${esc(certificate.recipientName)} · Certificate ${esc(certificate.code)}</p><p>For a correction, contact <a href="mailto:support@automivex.com?subject=Certificate%20name%20correction">support@automivex.com</a>. Any correction must preserve the certificate's verification history.</p></div>`:`<div class="profile-certificate-preview"><small>CERTIFICATE NAME PREVIEW</small><b id="profile-name-preview">${esc(profileName)}</b><span>Your name is saved to a certificate when it is issued.</span></div><button class="btn primary" type="submit">Save profile name</button>`}
+      </form>
+    </section>
+    ${btn("Back to dashboard","dashboard","btn outline")}
+  </section></div></main>${footer()}`;
 }
 function submittedProjectCard(project, reviewLabel) {
   const review = project.humanReviewStatus || "pending";
@@ -462,7 +491,7 @@ function dashboardView() {
   if (state.user?.role === "admin") return adminView();
   const p = state.progress || { enrolled:false, completedLessonIds:[], completedLessons:0,totalLessons:10,quizPassed:false,project:null,certificate:null };
   const overall = pct(p.completedLessons,p.totalLessons);
-  const accountMenu=`<div class="dash-account"><button class="dash-avatar" type="button" data-action="account" aria-label="Account menu" aria-expanded="false">${esc(state.user.fullName.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase())}</button><div class="dash-account-menu" id="dash-account-menu"><b>${esc(state.user.fullName)}</b><span>${esc(state.user.email||"")}</span><button type="button" data-action="change-email">Change email</button><button type="button" class="danger" data-action="delete-account">Delete account</button></div></div>`;
+  const accountMenu=`<div class="dash-account"><button class="dash-avatar" type="button" data-action="account" aria-label="Account menu" aria-expanded="false">${esc(state.user.fullName.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase())}</button><div class="dash-account-menu" id="dash-account-menu"><b>${esc(state.user.fullName)}</b><span>${esc(state.user.email||"")}</span><button type="button" data-action="profile">Profile and certificate name</button><button type="button" class="danger" data-action="delete-account">Delete account</button></div></div>`;
   return `${header()}<main class="workspace-main"><div class="workspace-shell"><aside>${workspaceNav("dashboard")}<div class="workspace-course-summary"><small>CURRENT PROGRAMME</small><b>Python API Development</b><span>${p.completedLessons}/${p.totalLessons} milestones</span></div></aside><section class="workspace-content"><div class="workspace-page-heading"><div><div class="eyebrow">LEARNER WORKSPACE</div><h1>Welcome, ${esc(state.user.fullName.split(" ")[0])}</h1><p>Your learning progress and next actions are all in one place.</p></div>${accountMenu}</div><section class="overview-progress-card"><div><span class="module-kicker">PROGRAMME PROGRESS</span><h2>${overall}% complete</h2><p>${p.completedLessons} of ${p.totalLessons} learning milestones completed</p><div class="progress-track" role="progressbar" aria-label="Programme progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${overall}" aria-valuetext="${overall}% complete"><span style="width:${overall}%"></span></div></div><div class="overview-ring" style="--progress:${overall*3.6}deg"><b>${overall}%</b></div></section><div class="overview-grid"><article class="overview-action-card"><span class="overview-card-icon blue">▦</span><div><small>CONTINUE LEARNING</small><h2>${p.completedLessons?"Next milestone":"Start the programme"}</h2><p>${p.completedLessons?p.completedLessons+" milestones completed":"Explore the curriculum and complete your first lesson."}</p></div>${btn(p.enrolled?"Open my learning":"Enroll now",p.enrolled?"learning":"enroll","btn soft")}</article><article class="overview-action-card"><span class="overview-card-icon green">✓</span><div><small>KNOWLEDGE ASSESSMENT</small><h2>${p.quizPassed?"Assessment passed":"Final assessment"}</h2>  <p>${p.quizPassed?"Your latest passed result is recorded.":"Complete the knowledge and written-evidence assessment."}</p></div>${btn("Open assessment","quiz","btn soft",!p.enrolled?"disabled":"")}</article><article class="overview-action-card"><span class="overview-card-icon purple">⌘</span><div><small>CAPSTONE PROJECT</small><h2>${p.project?.passed?"Checklist passed":"Build your project"}</h2><p>${p.project?"Latest repository check: "+p.project.score+"/7":"Submit a public repository for structural checks."}</p></div>${btn("Open capstone","capstone","btn soft",!p.enrolled?"disabled":"")}</article><article class="overview-action-card"><span class="overview-card-icon gold">◆</span><div><small>CERTIFICATE</small><h2>${p.certificate?"Certificate issued":"Certificate status"}</h2><p>${p.certificate?"View, print or share your credential.":"Complete all programme requirements to unlock it."}</p></div>${btn("Certificate centre","certificates","btn soft")}</article></div></section></div></main>${footer()}`;
 }
 
@@ -500,10 +529,16 @@ function adminView() {
       <td><small class="social-review-summary">${esc(socialSummary)}</small><small class="social-review-disclaimer">Learner self-attestation; not independently verified</small></td>
       <td><span class="status-pill ${statusClass}">${label}</span>${s.review_notes ? `<small class="review-note">${esc(s.review_notes)}</small>` : ""}</td>
       <td>${new Date(s.submitted_at).toLocaleDateString()}</td>
-      <td><div class="review-actions">${s.passed && socialComplete ? `<button class="btn tiny primary" type="button" data-action="review-project" data-submission-id="${esc(s.id)}" data-review-status="approved">Approve</button>` : ""}<button class="btn tiny outline" type="button" data-action="review-project" data-submission-id="${esc(s.id)}" data-review-status="rejected">Request changes</button></div></td>
+      <td><div class="review-actions">${s.passed && socialComplete && review !== "approved" ? `<button class="btn tiny primary" type="button" data-action="review-project" data-submission-id="${esc(s.id)}" data-review-status="approved">Approve</button>` : ""}${review==="approved"&&s.passed&&socialComplete?`<button class="btn tiny primary" type="button" data-action="admin-issue-certificate" data-submission-id="${esc(s.id)}">Issue certificate</button>`:""}${review!=="approved"?`<button class="btn tiny outline" type="button" data-action="review-project" data-submission-id="${esc(s.id)}" data-review-status="rejected">Request changes</button>`:""}</div></td>
     </tr>`;
   }).join("");
-  return `${header()}<main class="dashboard-main"><div class="container"><div class="eyebrow">COMPANY ADMINISTRATION</div><h1>Administration dashboard</h1><p class="muted">Private operational metrics and submitted repository checks.</p><div class="admin-stats"><div><small>Learner accounts</small><b>${a.counts.users}</b></div><div><small>Enrollments</small><b>${a.counts.enrollments}</b></div><div><small>Project submissions</small><b>${a.counts.projects}</b></div><div><small>Certificates issued</small><b>${a.counts.certificates}</b></div></div><section class="panel"><h2>Recent project submissions</h2><p class="panel-intro">Review the public repository checklist and recorded commit before approving a capstone. Social confirmations are learner self-attestations, not independently verified. Approval unlocks certificate issuance only while the repository still matches the verified commit.</p><div class="table-wrap"><table><thead><tr><th>Student</th><th>Repository</th><th>Checklist</th><th>Social confirmations</th><th>Review</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>${rows || `<tr><td colspan="7">No submissions yet.</td></tr>`}</tbody></table></div></section></div></main>${footer()}`;
+  const certificateRows=(a.certificates||[]).map(certificate=>`<tr>
+    <td><b>${esc(certificate.recipientName)}</b>${certificate.corrected?`<small>Corrected · issuer audit recorded</small>`:""}<small>Account: ${esc(certificate.learnerName)} · ${esc(certificate.email)}</small></td>
+    <td>${esc(certificate.courseTitle)}<small>${new Date(certificate.issuedAt.replace(" ","T")+"Z").toLocaleDateString()}</small></td>
+    <td><a href="/verify/${encodeURIComponent(certificate.code)}" target="_blank" rel="noopener noreferrer">${esc(certificate.code)} ↗</a><small>${certificate.revoked?"Revoked":"Active"}</small></td>
+    <td>${certificate.revoked?`<span class="status-pill">Revoked; correction disabled</span>`:!certificate.integrityValid?`<span class="status-pill">Signature invalid; correction disabled</span>`:`<div class="admin-certificate-actions"><button class="btn tiny outline" type="button" data-action="admin-resend-certificate" data-certificate-code="${esc(certificate.code)}">Resend email</button><form class="certificate-name-correction" data-certificate-name-form data-code="${esc(certificate.code)}"><label>Correct recipient name<input name="fullName" type="text" minlength="1" maxlength="100" required value="${esc(certificate.recipientName)}" autocomplete="off"></label><label>Reason for audit record<textarea name="reason" minlength="10" maxlength="500" required placeholder="Explain why this certificate name needs correction"></textarea></label><button class="btn tiny outline" type="submit">Save audited correction</button></form></div>`}</td>
+  </tr>`).join("");
+  return `${header()}<main class="dashboard-main"><div class="container"><div class="eyebrow">COMPANY ADMINISTRATION</div><h1>Administration dashboard</h1><p class="muted">Private operational metrics and submitted repository checks.</p><div class="admin-stats"><div><small>Learner accounts</small><b>${a.counts.users}</b></div><div><small>Enrollments</small><b>${a.counts.enrollments}</b></div><div><small>Project submissions</small><b>${a.counts.projects}</b></div><div><small>Certificates issued</small><b>${a.counts.certificates}</b></div></div><section class="panel"><h2>Recent project submissions</h2><p class="panel-intro">Review the public repository checklist and recorded commit before approving a capstone. Social confirmations are learner self-attestations, not independently verified. If all course requirements are complete, approval generates the learner’s certificate and emails its verification link. Earlier approved submissions can use Issue certificate.</p><div class="table-wrap"><table><thead><tr><th>Student</th><th>Repository</th><th>Checklist</th><th>Social confirmations</th><th>Review</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>${rows || `<tr><td colspan="7">No submissions yet.</td></tr>`}</tbody></table></div></section><section class="panel admin-certificates"><h2>Issued certificates</h2><p class="panel-intro">Resend the certificate email or correct an issued recipient name. Name corrections require a reason, are recorded in the administrator audit log, and re-sign the credential evidence. Corrections do not change the learner’s account profile.</p><form id="certificate-search-form" class="certificate-search"><label for="certificate-search">Find by certificate ID, recipient, learner, or email</label><div><input id="certificate-search" name="query" type="search" maxlength="254" value="${esc(state.certificateSearch)}" placeholder="Search issued certificates"><button class="btn outline" type="submit">Search</button></div></form><div class="table-wrap"><table><thead><tr><th>Recipient and learner</th><th>Certificate</th><th>Verification</th><th>Manage certificate</th></tr></thead><tbody>${certificateRows||`<tr><td colspan="4">${state.certificateSearch?"No matching certificates.":"No certificates have been issued."}</td></tr>`}</tbody></table></div></section></div></main>${footer()}`;
 }
 function render() {
   destroyLessonPlayers();
@@ -514,8 +549,16 @@ function render() {
   else if (state.view === "quiz") app.innerHTML = quizView();
   else if (state.view === "capstone") app.innerHTML = capstoneView();
   else if (state.view === "certificates") app.innerHTML = certificatesView();
+  else if (state.view === "profile") app.innerHTML = profileView();
   else if (state.view === "admin") app.innerHTML = adminView();
   else app.innerHTML = homeView();
+  if (state.view === "profile") {
+    const nameInput=$("#profile-form input[name=fullName]");
+    nameInput?.addEventListener("input",()=>{
+      const preview=$("#profile-name-preview");
+      if(preview)preview.textContent=nameInput.value.trim()||"Your certificate name";
+    });
+  }
   if (state.view === "capstone") {
     const form = $("#project-form");
     const declaration = form?.querySelector(".check-label");
@@ -551,9 +594,13 @@ async function refresh() {
   state.user = me.user; state.progress = me.progress;
   if (state.view === "dashboard" && !state.user) state.view="home";
 }
-async function loadAdminOverview() {
+async function loadAdminOverview(search=state.certificateSearch) {
   try {
-    state.admin = await api("/api/admin/overview");
+    const [overview, certificateData]=await Promise.all([
+      api("/api/admin/overview"),
+      api(`/api/admin/certificates${search?`?q=${encodeURIComponent(search)}`:""}`)
+    ]);
+    state.admin={...overview,certificates:certificateData.certificates};
     state.adminError = null;
   } catch (error) {
     state.admin = null;
@@ -565,9 +612,15 @@ async function loadAdminOverview() {
 }
 async function go(view) {
   if (state.view === "quiz" && view !== "quiz") await exitAssessmentFullscreen();
-  if (["dashboard","learning","assessment","quiz","capstone","certificates","admin"].includes(view)) {
+  if (["dashboard","learning","assessment","quiz","capstone","certificates","profile","admin"].includes(view)) {
     if (!state.user) { state.view="auth"; render(); return; }
     await refresh();
+    if (!state.user) {
+      state.view="auth";
+      history.replaceState(null,"","#auth");
+      render();
+      return;
+    }
     if (state.user?.role === "admin") {
       view = "admin";
       state.view = "admin";
@@ -596,13 +649,28 @@ async function go(view) {
 }
 async function startAuth(form) {
   const data = new FormData(form);
-  const result = await api("/api/auth/start",{method:"POST",body:JSON.stringify({fullName:data.get("fullName"),email:data.get("email"),acceptTerms:data.get("acceptTerms")==="on",marketingOptIn:false})});
-  state.authEmail=String(data.get("email")).trim().toLowerCase(); state.debugCode=result.debugCode||null; render(); toast("Check your email for the six-digit code.");
+  state.authMode=form.dataset.authMode==="signup"?"signup":"signin";
+  state.authEmail=String(data.get("email")).trim().toLowerCase();
+  state.authFullName=state.authMode==="signup"?String(data.get("fullName")||"").trim():"";
+  state.authTermsAccepted=state.authMode==="signup"&&data.get("acceptTerms")==="on";
+  const result=await api("/api/auth/start",{method:"POST",body:JSON.stringify({intent:state.authMode,fullName:state.authFullName,email:state.authEmail,acceptTerms:state.authTermsAccepted,marketingOptIn:false})});
+  state.authCodeSent=true;
+  state.debugCode=result.debugCode||null;
+  render();
+  $("#verify-form input[name=code]")?.focus();
+  toast("Check your email for the six-digit code.");
+}
+async function resendAuthCode() {
+  const result=await api("/api/auth/start",{method:"POST",body:JSON.stringify({intent:state.authMode,fullName:state.authFullName,email:state.authEmail,acceptTerms:!!state.authTermsAccepted,marketingOptIn:false})});
+  state.debugCode=result.debugCode||null;
+  render();
+  $("#verify-form input[name=code]")?.focus();
+  toast("A new code was requested. Only the latest code works.");
 }
 async function verifyAuth(form) {
   const code = new FormData(form).get("code");
   await api("/api/auth/verify",{method:"POST",body:JSON.stringify({email:state.authEmail,code})});
-  state.authEmail=""; state.debugCode=null; await refresh();
+  state.authEmail=""; state.authFullName=""; state.authCodeSent=false; state.debugCode=null; await refresh();
   state.view=state.user?.role==="admin"?"admin":"dashboard";
   if (state.view==="admin") {
     state.admin=null;
@@ -611,6 +679,15 @@ async function verifyAuth(form) {
     await loadAdminOverview();
   }
   history.replaceState(null,"",`#${state.view}`); render(); toast("You are signed in.");
+}
+async function saveProfile(form) {
+  const data=new FormData(form);
+  const result=await api("/api/profile",{method:"PUT",body:JSON.stringify({fullName:data.get("fullName")})});
+  state.user=result.user;
+  await refresh();
+  state.view="profile";
+  render();
+  toast("Your learner profile and future certificate name were updated.","success");
 }
 async function enroll() { const d=await api("/api/enroll",{method:"POST",body:"{}"}); state.progress=d.progress; render(); toast("You are enrolled. Your learning path is ready."); }
 async function submitLessonCheck(form, id) {
@@ -698,21 +775,57 @@ async function reviewProject(submissionId, status) {
     .find(item => item.dataset.submissionId === submissionId && item.dataset.reviewStatus === status);
   const stopLoading = beginButtonLoading(button, status === "approved" ? "Approving…" : "Saving feedback…");
   try {
-    await api("/api/admin/projects/review", {
+    const result=await api("/api/admin/projects/review", {
       method:"POST",
       body:JSON.stringify({ submissionId, status, notes:note })
     });
-    state.admin = await api("/api/admin/overview");
+    await loadAdminOverview();
     render();
-    toast(status === "approved" ? "Capstone approved. Certificate eligibility is now unlocked." : "Capstone rejected. Your feedback was saved.", "success");
+    if(status==="approved"&&result.certificate?.issued){
+      const emailMessage=result.certificate.email?.message;
+      toast(`Capstone approved and certificate issued.${emailMessage?` ${emailMessage}`:""}`,result.certificate.email?.sent===false?"error":"success");
+    }else if(status==="approved"){
+      toast(`Capstone approved. ${result.certificate?.message||"The learner can now view certificate eligibility."}`,result.certificate?.message?"":"success");
+    }else toast("Capstone rejected. Your feedback was saved.","success");
   } finally {
     stopLoading?.();
   }
 }
+async function adminIssueCertificate(submissionId) {
+  const result=await api("/api/admin/certificate/issue",{method:"POST",body:JSON.stringify({submissionId})});
+  await loadAdminOverview();
+  render();
+  if(result.created)toast(`Certificate issued. ${result.email?.message||""}`,result.email?.sent===false?"error":"success");
+  else toast("This learner already has an issued certificate. Use Resend email if they need another copy.","success");
+}
+async function adminResendCertificateEmail(code) {
+  const result=await api("/api/admin/certificates/email",{method:"POST",body:JSON.stringify({code})});
+  toast(result.message,"success");
+}
+async function saveCertificateNameCorrection(form) {
+  const data=new FormData(form);
+  const code=form.dataset.code;
+  const fullName=String(data.get("fullName")||"").trim();
+  const reason=String(data.get("reason")||"").trim();
+  if(!confirm(`Correct the signed recipient name for certificate ${code} to "${fullName}"?\n\nThis change is audited and will update the public verification record.`))return;
+  await api("/api/admin/certificates/name",{method:"POST",body:JSON.stringify({code,fullName,reason})});
+  await loadAdminOverview();
+  render();
+  toast("Certificate recipient name corrected. The updated verification record is signed and the action was audited.","success");
+}
+async function searchCertificates(form) {
+  state.certificateSearch=String(new FormData(form).get("query")||"").trim();
+  await loadAdminOverview();
+  render();
+}
 async function issueCertificate() {
   const d=await api("/api/certificate/issue",{method:"POST",body:"{}"});
-  await refresh(); render(); toast("Your certificate has been issued.","success");
-  window.location.href=`/certificate.html?code=${encodeURIComponent(d.code)}`;
+  await refresh();
+  state.view="certificates";
+  history.replaceState(null,"","#certificates");
+  render();
+  if(d.created)toast(`Your certificate is now in your certificate centre. ${d.email?.message||""}`,d.email?.sent===false?"error":"success");
+  else toast("Your certificate is already available in your certificate centre.","success");
 }
 app.addEventListener("click", async e=>{
   const el=e.target.closest("[data-action]"); if(!el) return;
@@ -731,7 +844,32 @@ app.addEventListener("click", async e=>{
     else if(action==="program") { await go(state.user?"dashboard":"home"); document.querySelector("#program")?.scrollIntoView({behavior:"smooth"}); }
     else if(action==="capstone") { if(state.user) await go("capstone"); else { await go("home"); document.querySelector("#capstone")?.scrollIntoView({behavior:"smooth"}); } }
     else if(action==="auth") await go("auth");
+    else if(action==="auth-mode") {
+      state.authMode=el.dataset.mode==="signup"?"signup":"signin";
+      state.authCodeSent=false;
+      state.authFullName="";
+      state.authTermsAccepted=false;
+      state.debugCode=null;
+      render();
+    }
+    else if(action==="switch-signup") {
+      state.authMode="signup";
+      state.authCodeSent=false;
+      state.authFullName="";
+      state.authTermsAccepted=false;
+      state.debugCode=null;
+      render();
+    }
+    else if(action==="change-email") {
+      state.authEmail="";
+      state.authCodeSent=false;
+      state.debugCode=null;
+      render();
+      $("#start-form input[name=email]")?.focus();
+    }
+    else if(action==="resend-code") await resendAuthCode();
     else if(action==="dashboard") await go("dashboard");
+    else if(action==="profile") await go("profile");
     else if(action==="learning") await go("learning");
     else if(action==="assessment") await go("assessment");
     else if(action==="certificates") await go("certificates");
@@ -741,6 +879,13 @@ app.addEventListener("click", async e=>{
     else if(action==="capstone-details") await go("capstone");
     else if(action==="issue-certificate") await issueCertificate();
     else if(action==="review-project") await reviewProject(el.dataset.submissionId, el.dataset.reviewStatus);
+    else if(action==="admin-issue-certificate") await adminIssueCertificate(el.dataset.submissionId);
+    else if(action==="admin-resend-certificate") await adminResendCertificateEmail(el.dataset.certificateCode);
+    else if(action==="copy-certificate-link") {
+      if(!navigator.clipboard?.writeText)throw new Error("Clipboard access is unavailable. Open the verification page and copy its address.");
+      await navigator.clipboard.writeText(el.dataset.url);
+      toast("Certificate verification link copied.","success");
+    }
     else if(action==="account") {
       const menu=$("#dash-account-menu");
       if (menu) {
@@ -748,7 +893,6 @@ app.addEventListener("click", async e=>{
         el.setAttribute("aria-expanded",String(open));
       }
     }
-    else if(action==="change-email") {state.authEmail="";state.debugCode=null;await go("auth");}
     else if(action==="logout") {await api("/api/auth/logout",{method:"POST",body:"{}"});state.user=null;state.progress=null;state.admin=null;state.adminError=null;state.view="home";history.replaceState(null,"",location.pathname);render();toast("You have signed out.");}
     else if(action==="delete-account") { if(confirm("Permanently delete your Automivex learning account, progress, submissions and certificate records? This cannot be undone.")){const stopDeleteLoading=beginButtonLoading(el,"Deleting account…");try{await api("/api/account",{method:"DELETE"});state.user=null;state.progress=null;state.view="home";render();toast("Your learning account and associated records were deleted.","success");}finally{stopDeleteLoading?.();}} }
     else if(action.startsWith("lesson:")) {
@@ -778,9 +922,11 @@ app.addEventListener("submit", async e=>{
   if (!(form instanceof HTMLFormElement) || form.dataset.submitting === "true") return;
   form.dataset.submitting = "true";
   const submitButton = form.querySelector('button[type="submit"]');
-  const loadingLabel = ({
+  const loadingLabel = form.matches("[data-certificate-name-form]") ? "Saving correction…" : ({
+    "certificate-search-form": "Searching…",
     "start-form": "Sending code…",
     "verify-form": "Verifying code…",
+    "profile-form": "Saving profile…",
     "quiz-form": "Submitting assessment…",
     "project-form": "Checking repository…"
   })[form.id] || "Saving progress…";
@@ -789,6 +935,9 @@ app.addEventListener("submit", async e=>{
     if(form.matches("[data-lesson-check]")) await submitLessonCheck(form, form.dataset.lessonCheck);
     else if(form.id==="start-form") await startAuth(form);
     else if(form.id==="verify-form") await verifyAuth(form);
+    else if(form.id==="profile-form") await saveProfile(form);
+    else if(form.matches("[data-certificate-name-form]")) await saveCertificateNameCorrection(form);
+    else if(form.id==="certificate-search-form") await searchCertificates(form);
     else if(form.id==="quiz-form") await submitQuiz(form);
     else if(form.id==="project-form") await submitProject(form);
   } catch(err) { toast(err.message,"error"); }
@@ -806,7 +955,7 @@ app.addEventListener("submit", async e=>{
     history.replaceState(null,"","#admin");
     try { await loadAdminOverview(); }
     catch(err) { console.error(err); }
-  } else if (state.user && ["dashboard","learning","assessment","quiz","capstone","certificates"].includes(hashView)) state.view=hashView;
+  } else if (state.user && ["dashboard","learning","assessment","quiz","capstone","certificates","profile"].includes(hashView)) state.view=hashView;
   render();
 })();
 window.addEventListener("hashchange", async ()=>{
@@ -814,7 +963,7 @@ window.addEventListener("hashchange", async ()=>{
   if (!state.user) return;
   const allowed=state.user.role==="admin"
     ? ["dashboard","admin"]
-    : ["dashboard","learning","assessment","quiz","capstone","certificates"];
+    : ["dashboard","learning","assessment","quiz","capstone","certificates","profile"];
   if (state.user.role==="admin" && !allowed.includes(hash)) {
     history.replaceState(null,"","#admin");
     return;
