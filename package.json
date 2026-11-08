@@ -11,8 +11,8 @@
     "db:local": "wrangler d1 migrations apply automivex-learning --local",
     "db:remote": "wrangler d1 migrations apply automivex-learning --remote",
     "db:create": "wrangler d1 create automivex-learning",
-    "test": "npm run typecheck && node tests/production-smoke.mjs",
-    "typecheck": "node --check src/worker.js && node --check public/app.js && node --check public/certificate.js && node --check public/verify.js"
+    "test": "npm run typecheck && node tests/github-check.mjs && node tests/production-smoke.mjs",
+    "typecheck": "node --check src/worker.js && node --check src/github.js && node --check public/app.js && node --check public/certificate.js && node --check public/verify.js"
   },
   "devDependencies": {
     "wrangler": "^4.45.0"
