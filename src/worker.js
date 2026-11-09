@@ -1023,7 +1023,9 @@ async function api(request, env) {
         env.DB.prepare("SELECT COUNT(*) AS n FROM project_submissions").first(), env.DB.prepare("SELECT COUNT(*) AS n FROM certificates WHERE revoked_at IS NULL").first()
       ]);
       const submissions = await env.DB.prepare(`SELECT p.id,p.github_url,p.score,p.passed,p.submitted_at,p.human_review_status,p.review_notes,p.social_attestations_json,u.full_name,u.email
-        FROM project_submissions p JOIN users u ON u.id=p.user_id ORDER BY p.submitted_at DESC LIMIT 100`).all();
+        FROM project_submissions p JOIN users u ON u.id=p.user_id
+        WHERE NOT EXISTS (SELECT 1 FROM certificates c WHERE c.user_id=p.user_id AND c.course_id=p.course_id)
+        ORDER BY p.submitted_at DESC LIMIT 100`).all();
       return json({ counts: { users:users.n, enrollments:enrollments.n, projects:projects.n, certificates:certificates.n }, submissions: (submissions.results || []).map(submission=>({...submission,social_attestations:JSON.parse(submission.social_attestations_json||"{}")})) });
     }
 

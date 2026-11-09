@@ -2157,6 +2157,54 @@ h1, h2, h3, h4 {
   box-shadow: var(--shadow-sm);
 }
 
+.lesson-video-card.mobile-fullscreen {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  max-height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+}
+
+.lesson-video-card.mobile-fullscreen .lesson-video-frame {
+  min-height: 0;
+  flex: 1 1 auto;
+  aspect-ratio: auto;
+}
+
+.lesson-video-card.mobile-fullscreen .lesson-video-caption,
+.lesson-video-card.mobile-fullscreen .lesson-player-status,
+.lesson-video-card.mobile-fullscreen .lesson-player-hint,
+.lesson-video-card.mobile-fullscreen .lesson-video-chapters {
+  display: none;
+}
+
+.lesson-video-card.mobile-fullscreen .lesson-video-controls {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.92), transparent);
+}
+
+.lesson-video-card.mobile-fullscreen .lesson-clip-play,
+.lesson-video-card.mobile-fullscreen .lesson-clip-rewind,
+.lesson-video-card.mobile-fullscreen .lesson-clip-forward,
+.lesson-video-card.mobile-fullscreen .lesson-clip-fullscreen,
+.lesson-video-card.mobile-fullscreen .lesson-clip-time {
+  color: #fff;
+}
+
 .lesson-video-card:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 3px;
@@ -4007,5 +4055,68 @@ td small {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+}
+
+.certificate-lookup-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.85fr);
+  align-items: center;
+  gap: clamp(24px, 5vw, 64px);
+}
+
+.certificate-lookup-inner h2 {
+  margin: 8px 0;
+}
+
+.certificate-lookup-inner p {
+  max-width: 520px;
+  color: var(--text-muted);
+}
+
+.certificate-lookup-form {
+  display: grid;
+  gap: 8px;
+  padding: 22px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.certificate-lookup-form > label {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.certificate-lookup-form > div {
+  display: flex;
+  gap: 10px;
+}
+
+.certificate-lookup-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font: 13px var(--font-mono);
+}
+
+.certificate-lookup-form small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .certificate-lookup-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .certificate-lookup-form > div {
+    flex-direction: column;
   }
 }
