@@ -330,10 +330,21 @@ function hasSocialAttestations(value) {
   return ["linkedin", "youtube", "tiktok"].every(key => value?.[key] === true);
 }
 function appUrl(env, request) { return (env.APP_URL || new URL(request.url).origin).replace(/\/$/, ""); }
-function originOkay(request) {
+function originOkay(request, env) {
   const origin = request.headers.get("Origin");
   if (!origin) return true;
-  try { return new URL(origin).host === new URL(request.url).host; } catch { return false; }
+  try {
+    const originUrl = new URL(origin);
+    const requestUrl = new URL(request.url);
+    // Some hosting proxies rewrite the request URL to an internal hostname.
+    // APP_URL is the public canonical origin and keeps same-origin browser calls valid.
+    const allowedHosts = new Set([requestUrl.host]);
+    if (env.APP_URL) {
+      const appUrl = new URL(env.APP_URL);
+      if (appUrl.protocol === "https:") allowedHosts.add(appUrl.host);
+    }
+    return originUrl.protocol === "https:" && allowedHosts.has(originUrl.host);
+  } catch { return false; }
 }
 async function bodyJson(request) {
   const text = await request.text();
@@ -556,7 +567,7 @@ async function api(request, env) {
   const url = new URL(request.url);
   const method = request.method.toUpperCase();
   const path = url.pathname;
-  if (!originOkay(request) && method !== "GET" && method !== "HEAD") return json({ error: "Cross-origin request rejected." }, 403);
+  if (!originOkay(request, env) && method !== "GET" && method !== "HEAD") return json({ error: "Cross-origin request rejected." }, 403);
   try {
     if (path === "/api/health" && method === "GET") return json({ ok: true, service: "Automivex Learning", timestamp: new Date().toISOString() });
     if (path === "/api/course" && method === "GET") return json({ course: publicCourse() });
